@@ -4,6 +4,14 @@ All notable changes to `cfb_edge.py` and the analysis loop. Rule changes cite th
 run that justified them; nothing in the constants block changes without one. Weekly report
 releases (`<weekday>-<date>` tags) are not listed here; see the GitHub releases page.
 
+## [2026-09-29 late] — License covers the simulations and pick boards
+
+- `LICENSE` and the README license section now name the gamma-Poisson dispersion fit, the
+  same-game correlation estimates, the Monte Carlo card simulation, and the pick boards
+  (just-win, agreement, lock + five); section 2 adds simulations and picks to the outputs that
+  can't be used without a license. Terms unchanged: proprietary, all rights reserved, view
+  only, commercial licenses available.
+
 ## [2026-09-29 evening] — NHL simulations: gamma-Poisson saves, card Monte Carlo, analysis/06 D
 
 ### Added
