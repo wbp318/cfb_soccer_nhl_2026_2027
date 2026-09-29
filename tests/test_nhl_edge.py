@@ -180,3 +180,56 @@ def test_report_name_and_banner_in_top():
     assert ne.report_path(dt.date(2026, 10, 7)).endswith("nhl-wednesday-2026-10-07.md")
     p = make_prop(line=3.5, over=+100, under=-120)
     assert ce.stakes_banner() in ne.render_top([p], 100.0)
+
+
+# ---------------------------------------------------------------- agreement board + lock
+
+def test_agree_signal_window_and_gap():
+    p = make_prop(market="player_points", line=0.5, over=-200, under=+165)   # model 0.73 vs fair 0.64 -> +14%
+    s = ne.agree_signal(p)
+    assert s.kind == "agree" and s.side == "over" and s.strength == 1 and 0 < s.edge <= ne.AGREE_MAX_GAP_PCT
+    assert ne.agree_signal(make_prop(market="player_points", line=0.5, over=-150, under=+125)) is None   # gap > +20%
+    assert ne.agree_signal(make_prop(market="player_points", line=0.5, over=-300, under=+240)) is None   # too short
+    thin = make_prop(market="player_points", line=0.5, over=-200, under=+165, player=make_player(games=4))
+    assert ne.agree_signal(thin) is None
+
+
+def test_lock_and_good_one_per_player():
+    a = make_prop(market="player_points", line=0.5, over=-200, under=+165)
+    b = make_prop(market="player_shots_on_goal", line=3.5, over=+100, under=-120)     # same player, value board
+    other = make_player(name="Nick Suzuki", team="MTL", rates={"points": 1.1, "shots": 2.2})
+    other.id = 8480018
+    c = make_prop(market="player_points", line=0.5, over=-180, under=+150, player=other)
+    lock, good = ne.lock_and_good([a, b, c])
+    assert lock.prop is a and [s.prop.player.id for s in good] == [other.id]
+
+
+def test_fetch_props_espn_pairs_over_then_under(monkeypatch):
+    g = make_game()
+    ath = "http://core/athletes/1"
+
+    def item(t, line, price):
+        return {"type": {"name": t}, "athlete": {"$ref": ath + "?lang=en"}, "odds": {"total": {"value": str(line)},
+                "american": {"value": price}}}
+
+    def fake_get(url, params=None, timeout=30):
+        if url == ne.ESPN_NHL_SCOREBOARD:
+            return {"events": [{"id": "9", "competitions": [{"competitors": [
+                {"homeAway": "home", "team": {"displayName": "Toronto Maple Leafs"}},
+                {"homeAway": "away", "team": {"displayName": "Montreal Canadiens"}}]}]}]}
+        if url.endswith("/propBets"):
+            return {"items": [item("Total Points", 0.5, "-195"), item("Total Points", 0.5, "+145"),
+                              item("Anytime Goalscorer", 0.5, "+120"), item("Total Shots on Goal", 3.5, "EVEN")]}
+        return {"fullName": "Auston Matthews"}
+    monkeypatch.setattr(ne, "_get", fake_get)
+    rows = ne.fetch_props_espn([g], g.date, log=lambda m: None)
+    assert rows == [(g.id, "Auston Matthews", "player_points", 0.5, -195, 145, "draftkings")]
+
+
+def test_paper_log_keeps_agree_and_prop_buckets_apart(tmp_path):
+    conn = ne.db_connect(str(tmp_path / "n.db"))
+    p = make_prop(market="player_points", line=0.5, over=-200, under=+165)
+    val = ne.Signal(p, "prop", "over", "prop value", 1, 10.0, 0.7, -200)
+    n = ne.db_paper_log(conn, [val, ne.agree_signal(p)], 100.0, dt.datetime(2026, 10, 7, tzinfo=UTC))
+    assert n == 2
+    assert sorted(r[0] for r in conn.execute("SELECT kind FROM paper_bets")) == ["agree", "prop"]

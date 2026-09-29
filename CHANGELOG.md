@@ -4,6 +4,41 @@ All notable changes to `cfb_edge.py` and the analysis loop. Rule changes cite th
 run that justified them; nothing in the constants block changes without one. Weekly report
 releases (`<weekday>-<date>` tags) are not listed here; see the GitHub releases page.
 
+## [2026-09-29] — NHL opening night: lock + five, DraftKings via ESPN, `agree` bucket
+
+### Added
+- **`agree_signal` / `agree_board` / `lock_and_good` / `render_lock`** in `nhl_edge.py`, and a
+  report section **The lock, and five good ones** above §1. The football just-win idea applied
+  to props: the side the projection and the de-vigged line both call > 50%, priced −250..−110
+  (`AGREE_MIN_PRICE` / `AGREE_MAX_PRICE`), model over fair by 0..+20% (`AGREE_MAX_GAP_PCT`,
+  because every run so far says bigger gaps lose), never saves (weakest projection), never
+  ⚠thin. Ranked by model chance to cash, best book per player × market. Good picks are the
+  rest of that board, then the value board, one per player (`GOOD_PICKS_N = 5`).
+- Agreement plays are paper-logged as kind **`agree`** (strength 1). `db_paper_log` now dedupes
+  per (game, player, market, **kind**) so an agree play and a value play on the same prop both
+  count. **No track record yet**; `LIVE_STAKES` unchanged.
+- **`fetch_props_espn`**: DraftKings two-sided player totals (SOG, points, assists, blocks,
+  saves) from ESPN's keyless core `propBets` feed, used when there is no `ODDS_API_KEY` and no
+  `--lines-file`. Pairs arrive Over first with no side label; checked on the opening-night
+  feed (Matthews 0.5 PTS −195 / +145, Ekman-Larsson +230 / −320). One-sided markets
+  (milestones, scorer props) are skipped because they can't be de-vigged.
+- `analysis/06_nhl` (Python + R): loaders select `kind`; section A prints `kind:prop` and
+  `kind:agree` rows, and the market × side × strength buckets are the value board only.
+  Checked on a scratch copy of the ledger with fake grades: point estimates identical in
+  both runtimes, bootstrap CIs within the last digit; both run clean on an empty DB.
+- Tests: `test_agree_signal_window_and_gap`, `test_lock_and_good_one_per_player`,
+  `test_fetch_props_espn_pairs_over_then_under`, `test_paper_log_keeps_agree_and_prop_buckets_apart`
+  (83 cases).
+
+### Fixed
+- `SEASON_START` was 2026-10-07; the NHL regular season opened **2026-09-29** (schedule API,
+  gameType 2). Docs updated.
+
+### Why
+- Opening night, and the user asked for one lock and five good props: winners, not outliers.
+  Sanity check before publishing: the lock (Suzuki over 0.5 PTS, model 76% vs fair 65%) had a
+  point in 77% of his 82 games in 2025-26, so the gap is not a rate bug.
+
 ## [2026-09-26] — Just-win board (football)
 
 ### Added

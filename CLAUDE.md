@@ -36,16 +36,16 @@ python soccer_edge.py --build-elo                   # once, ~3 min; re-runs fetc
 python soccer_edge.py --snapshot --report --top 15  # every league; --league eng.1,esp.1 to filter
 python soccer_edge.py --date 2026-09-20 --settle
 
-# NHL (season opens 2026-10-07)
+# NHL (season opened 2026-09-29)
 python nhl_edge.py --build                          # rosters + game logs both seasons, ~2 min
 python nhl_edge.py --calibrate                      # walk-forward projection test, no lines needed
-python nhl_edge.py --date 2026-10-07 --projections  # no key needed
-python nhl_edge.py --date 2026-10-07 --snapshot --report   # needs ODDS_API_KEY in .env, or --lines-file x.csv
+python nhl_edge.py --date 2026-09-29 --projections  # no key needed
+python nhl_edge.py --date 2026-09-29 --snapshot --report   # ODDS_API_KEY in .env; no key -> DraftKings via ESPN; or --lines-file x.csv
 python nhl_edge.py --settle
 
 # checks — run all four before every push
 ruff check cfb_edge.py cfb_gui.py soccer_edge.py nhl_edge.py analysis tests
-python -m pytest -q tests                           # 79 cases, no network
+python -m pytest -q tests                           # 83 cases, no network
 python -m pytest -q tests/test_soccer_edge.py -k draw   # one file / one test
 python analysis/05_soccer/soccer_loop.py && "C:/Program Files/R/R-4.4.2/bin/Rscript" analysis/05_soccer/soccer_loop.R
 ```
@@ -77,7 +77,10 @@ SQLite → rendering/report → main). Don't split them without asking.
 strength and a ⚠note. Market-only signals (line move, prob move, total move) are strength 1,
 informational, never staked. Football also has `just_win_signal` (kind `just-win`): the
 opposite question, favourites FPI and DK agree on at -250..-110, +EV, gap <= +20%; report
-section 0b, own paper bucket, no track record yet.
+section 0b, own paper bucket, no track record yet. NHL has the twin, `agree_signal` (kind
+`agree`): the prop side projection and de-vigged line both favour at -250..-110, gap 0..+20%,
+no saves, no ⚠thin; `lock_and_good` puts its top on the report as the lock. `analysis/06`
+section A reports `kind:prop` and `kind:agree` separately; market buckets are `prop` only.
 
 **Backfill is honest by construction.** Football: ESPN freezes `current` at the closer and
 the predictor at game morning. Soccer: ratings are never stored; `elo_as_of(date)` replays the
@@ -121,7 +124,10 @@ the analysis twin too.
 ## Gotchas
 
 - **ESPN 403s a full Chrome User-Agent** (Akamai). `{"User-Agent": "Mozilla/5.0"}` works.
-  DraftKings' own sportsbook API also 403s; that is why NHL props need The Odds API.
+  DraftKings' own sportsbook API also 403s; that is why NHL props use The Odds API, with
+  `fetch_props_espn` (ESPN core `odds/100/propBets`, keyless) as the fallback. Its two-sided
+  totals come as consecutive items with no side label, **Over first** (checked 2026-09-29:
+  Matthews 0.5 PTS -195 then +145). curl gets 403 from ESPN where `requests` does not.
 - **ESPN soccer `all/scoreboard` emits `null` entries inside a match's `odds` list**; skip
   non-dict entries or a whole day's build fails.
 - **NHL `stats/rest/en/team` lists every defunct franchise**; use `standings/now` for the

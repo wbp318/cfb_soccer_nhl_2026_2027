@@ -1,8 +1,8 @@
 """The NHL prop analysis loop: is the projection any good, and (once the ledger fills) does
 betting it against posted lines make money?
 
-  A. Paper ROI by market x side x strength, flat $1, bootstrap 95% CI. Empty until the
-     season opens (2026-10-07); prints and moves on.
+  A. Paper ROI by kind (prop = value board, agree = the lock board), then value props by
+     market x side x strength, flat $1, bootstrap 95% CI.
   B. Slices a rule can act on: edge band, market, side (Wilson CI on hit, flat ROI).
   C. Walk-forward projection calibration on the stored game logs (same recipe as
      nhl_edge.calibrate: shrinkage toward league average, recent-10 tilt, Poisson): log-loss
@@ -73,9 +73,11 @@ def p_over(lam: float, line: float) -> float:
 def section_a(bets: pd.DataFrame, rng) -> pd.DataFrame:
     print(f"A. Paper ROI — {len(bets):,} settled NHL paper props, flat ROI {100 * bets.pnl_flat.mean():+.1f}%\n")
     groups = [("ALL", "all", "all", bets)]
-    groups += [(m, s, str(st), g) for (m, s, st), g in bets.groupby(["market", "side", "strength"])]
-    groups += [(m, "any", "any", g) for m, g in bets.groupby("market")]
-    groups += [("ALL", s, "any", g) for s, g in bets.groupby("side")]
+    groups += [(f"kind:{k}", "all", "all", g) for k, g in bets.groupby("kind")]
+    props = bets[bets["kind"] == "prop"]        # the value board; the agree board is its own bucket above
+    groups += [(m, s, str(st), g) for (m, s, st), g in props.groupby(["market", "side", "strength"])]
+    groups += [(m, "any", "any", g) for m, g in props.groupby("market")]
+    groups += [("ALL", s, "any", g) for s, g in props.groupby("side")]
     rows = []
     for market, side, strength, g in groups:
         if len(g) < MIN_BETS:

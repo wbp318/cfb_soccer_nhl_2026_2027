@@ -1,8 +1,8 @@
 # cfb_soccer_nhl_2026_2027
 
 > College football, pro soccer **and NHL player prop** outlier finders. Three files
-> (`cfb_edge.py`, `soccer_edge.py`, `nhl_edge.py`); the first two need no API key, the NHL
-> lines need a free [Odds API](https://the-odds-api.com) key. The football half compares the
+> (`cfb_edge.py`, `soccer_edge.py`, `nhl_edge.py`); the first two need no API key; the NHL
+> lines use a free [Odds API](https://the-odds-api.com) key, or DraftKings via ESPN without one. The football half compares the
 > **DraftKings** line (via ESPN) against **ESPN FPI's** game projection for every game on the
 > Saturday slate, flags where the model and the market disagree, tracks open→current line
 > movement, sizes quarter-Kelly tickets, and writes everything to SQLite so the edge (if
@@ -11,7 +11,8 @@
 > self‑built Elo table standing in for the predictor ESPN does not publish for soccer —
 > see [Pro soccer](#pro-soccer-soccer_edgepy). The NHL half (2026‑27 season) projects
 > shots, points, goals, assists, blocks, power‑play points and goalie saves from the NHL's
-> public game logs and compares them to the posted prop line — see
+> public game logs and compares them to the posted prop line (plus a lock + five from the side model and market
+> agree on) — see
 > [NHL player props](#nhl-player-props-nhl_edgepy). **All three are paper only** until the
 > analysis loop says otherwise.
 >
@@ -72,8 +73,8 @@ python soccer_edge.py --top 15 --league eng.1,esp.1,ger.1,ita.1,fra.1
 python soccer_edge.py --snapshot --report    # persist + paper-log + reports/soccer-<weekday>-<date>.md
 
 python nhl_edge.py --build               # once (~2 min): rosters + game logs for 2025-26 and 2026-27 -> nhl.db
-python nhl_edge.py --date 2026-10-07 --projections      # opening night projections, no key needed
-python nhl_edge.py --date 2026-10-07 --snapshot --report   # with ODDS_API_KEY in .env: lines + paper log + report
+python nhl_edge.py --date 2026-09-29 --projections      # opening night projections, no key needed
+python nhl_edge.py --date 2026-09-29 --snapshot --report   # Odds API key in .env, else DK via ESPN: lines + lock + paper log + report
 ```
 
 Each `--report` is also published as a GitHub release so the pre‑kickoff board is frozen
@@ -141,7 +142,7 @@ cd cfb_soccer_nhl_2026_2027
 pip install -r requirements.txt            # runtime: just `requests`
 pip install -r analysis/requirements-py.txt -r requirements-dev.txt   # pandas/numpy + ruff/pytest
 python cfb_edge.py --top 10                # first live run — should print next Saturday's outliers
-python -m pytest -q tests                  # 79 passed
+python -m pytest -q tests                  # 83 passed
 ```
 
 No API keys, no `.env`, nothing to sign up for. If the first live run prints a 403, read
@@ -197,12 +198,14 @@ flowchart TB
     OUT2 -.->|"soccer.db"| LS
     OUT3 -.->|"nhl.db"| LN
 
-    subgraph NHL["1c · NHL props — nhl_edge.py (NHL public API + The Odds API)"]
+    subgraph NHL["1c · NHL props — nhl_edge.py (NHL public API + The Odds API / DK via ESPN)"]
         direction LR
         NAPI(("NHL api-web\nrosters · game logs\nboxscores · team summary")) --> PROJ["--build → nhl.db\nplayer_rates × opponent factor\n→ Poisson P(over)"]
         OAPI(("The Odds API\nplayer_* markets\nODDS_API_KEY")) --> PROJ
+        EDK(("no key: DraftKings\nvia ESPN propBets")) --> PROJ
         PROJ --> SIG3["prop_signal\nmodel vs de-vigged line\n⚠overreach · ⚠thin · ⚠saves-model"]
-        SIG3 --> OUT3["projections · --top\nreports/nhl-WEEKDAY-DATE.md\nnhl.db paper ledger"]
+        PROJ --> AGR["agree_signal\nboth favour the side · -250..-110\ngap ≤ +20% → the lock + five"]
+        SIG3 & AGR --> OUT3["projections · --top · lock\nreports/nhl-WEEKDAY-DATE.md\nnhl.db paper ledger"]
     end
 
     subgraph STORE["2 · Storage (local only, gitignored)"]
@@ -217,13 +220,13 @@ flowchart TB
         L --> A3["03 line move\nfollow-the-money"]
         L --> A4["04 deep dive\nhit % + ROI by edge · price · |spread|\ncalibration"]
         LS["_shared/load_soccer\n.py ⇄ .R"] --> A5["05 soccer loop\n3-way ROI · slices · Elo calibration\nHFA × draw-base refit"]
-        LN["_shared/load_nhl\n.py ⇄ .R"] --> A6["06 NHL loop\nprop ROI · slices\nwalk-forward projection calibration"]
+        LN["_shared/load_nhl\n.py ⇄ .R"] --> A6["06 NHL loop\nROI by kind (prop · agree) · slices\nwalk-forward projection calibration"]
         A1 & A2 & A3 & A4 & A5 & A6 --> AGREE{"Python == R?"}
     end
 
     subgraph GUARD["4 · Guard rails (no internet, no real data)"]
         direction LR
-        T["tests/\npytest · 79 cases\nodds math · signals · grading · SQLite"]
+        T["tests/\npytest · 83 cases\nodds math · signals · grading · SQLite"]
         CI["GitHub Actions\npy 3.12 + 3.13 · R 4.4\nlint · tests · empty-DB runs"]
     end
 
@@ -302,7 +305,7 @@ flowchart LR
     SDB[("soccer.db")] --> LSB["load_soccer_bets() · load_soccer_matches()\nload_results()"]
     LSB --> S5["05 soccer_loop\nQ-A: does the 3-way ledger make money? (bootstrap CI)\nQ-B: by edge band · price band · pick\nQ-C: is Elo calibrated? log-loss vs the closer\nQ-D: refit ELO_HFA × DRAW_BASE on the results table"]
     NDB[("nhl.db")] --> LNB["load_nhl_bets() · load_game_logs()"]
-    LNB --> S6["06 nhl_loop\nQ-A: does the prop ledger make money? (bootstrap CI)\nQ-B: by edge band · market · side\nQ-C: walk-forward projection calibration\nlog-loss vs league average · reliability bins"]
+    LNB --> S6["06 nhl_loop\nQ-A: does the prop ledger make money? by kind prop · agree (bootstrap CI)\nQ-B: by edge band · market · side\nQ-C: walk-forward projection calibration\nlog-loss vs league average · reliability bins"]
 
     S1 & S2 & S3 & S4 & S5 & S6 --> OUTC["analysis/_out/*.csv\n(gitignored)"]
     S1 & S2 & S3 & S4 & S5 & S6 --> STD["stdout tables\nsame numbers in .py and .R"]
@@ -723,7 +726,7 @@ flowchart LR
     PUSH --> RJ["R job\n(r-lib/actions, R 4.4)"]
     PY --> P1["py_compile\ncfb_edge.py + soccer_edge.py + nhl_edge.py + analysis/*.py"]
     P1 --> P2["ruff check\n(rule set pinned in ruff.toml)"]
-    P2 --> PT["pytest tests/\n79 cases · no network"]
+    P2 --> PT["pytest tests/\n83 cases · no network"]
     PT --> P3["cfb_edge.py --help\n(argparse still parses)"]
     P3 --> P4["--paper-show --db scratch.db\n(SCHEMA + MIGRATIONS bootstrap)"]
     P4 --> P5["run all 6 analysis .py\nagainst empty scratch DBs\nCFB_DB · CFB_SOCCER_DB · CFB_NHL_DB"]
@@ -1135,16 +1138,23 @@ shape is the same as the other two tools with two differences:
    10 games, then multiplied by the opponent's shots‑allowed or goals‑allowed relative to the
    league (clamped 0.80–1.20) and a 2% home bump. That rate is a Poisson mean; P(over the
    line) falls out of the CDF, with whole‑number lines handled as pushes.
-2. **The lines need a key.** DraftKings blocks direct API access, so props come from
+2. **The lines.** DraftKings blocks direct API access, so props come from
    [The Odds API](https://the-odds-api.com) (`ODDS_API_KEY` in the environment or in a
-   gitignored `.env`), or from a CSV you type (`--lines-file`). Without either, the tool
-   prints projections at market‑typical lines and logs nothing.
+   gitignored `.env`; four books, seven markets), or from a CSV you type (`--lines-file`).
+   With neither, the tool reads DraftKings' two-sided player totals (SOG, points, assists,
+   blocks, saves) from ESPN's keyless `propBets` feed (Over listed first in each pair).
+3. **The lock, and five good ones.** The football just‑win idea applied to props: the side the
+   projection *and* the de‑vigged line both call more likely than not, priced −250..−110,
+   model above fair by no more than +20%, never saves or ⚠thin, ranked by chance to cash.
+   The top one is the lock; the next five come from the rest of that board, then the value
+   board, one per player. Paper‑logged as kind `agree`, its own bucket in `analysis/06`.
+   No track record yet.
 
 ```powershell
 python nhl_edge.py --build                       # once, then weekly: rosters + game logs -> nhl.db
 python nhl_edge.py --calibrate                   # walk-forward test of the projection on 2025-26
-python nhl_edge.py --date 2026-10-07 --projections     # no key needed
-python nhl_edge.py --date 2026-10-07 --snapshot --report   # with ODDS_API_KEY: lines, paper log, report
+python nhl_edge.py --date 2026-09-29 --projections     # no key needed
+python nhl_edge.py --date 2026-09-29 --snapshot --report   # lines (Odds API, else DK via ESPN), paper log, report
 python nhl_edge.py --settle                      # next morning: grade from boxscores
 ```
 
@@ -1164,13 +1174,14 @@ flowchart TD
     F3 --> L{"lines?"}
     L -->|"--lines-file x.csv"| L1["read_props_csv"]
     L -->|"ODDS_API_KEY"| L2["Odds API: events → per-event odds\n7 markets · DK/FD/MGM/Caesars"]
-    L -->|"neither"| L3["synthesize market-typical lines\nprojections only"]
+    L -->|"neither"| L3["fetch_props_espn: DraftKings via ESPN\nSOG · PTS · A · BLK · SV totals"]
     L1 & L2 & L3 --> M["attach_props: name + team → rostered player\nunmatched or ambiguous rows dropped"]
     M --> P["project(): λ = rate × opponent factor\nP(over) from Poisson, push-conditioned"]
     P --> SIG["prop_signal: model vs de-vigged over/under\n+8% value · +15% STRONG · ≥ +30% ⚠overreach\n⚠thin · ⚠saves-model · ⚠not-starter"]
-    SIG --> R["render_projections · render_top\nboth under stakes_banner()"]
+    P --> AG["agree_board → lock_and_good\nboth favour the side · -250..-110 · gap ≤ +20%"]
+    SIG & AG --> R["render_projections · render_top · render_lock\nall under stakes_banner()"]
     R --> SN{"--snapshot?"}
-    SN -->|yes| DBW["props rows + paper_bets (strength ≥ 1)"] --> REP
+    SN -->|yes| DBW["props rows + paper_bets\nkind prop (strength ≥ 1) · kind agree"] --> REP
     SN -->|no| REP{"--report?"}
     REP -->|yes| W["reports/nhl-WEEKDAY-DATE.md"] --> END
     REP -->|no| END((done))
@@ -1191,13 +1202,14 @@ flowchart LR
     subgraph LINES["prop lines"]
         OA["The Odds API v4\n/sports/icehockey_nhl/events\n/events/ID/odds?markets=player_…\n(ODDS_API_KEY · ~500 free requests/month)"]
         CSV["--lines-file\nplayer,market,line,over,under[,book[,game]]"]
+        EP["ESPN core …/nhl/events/ID/competitions/ID/odds/100/propBets\nDraftKings totals, keyless fallback"]
     end
     ST --> RO --> GL --> DB[("nhl.db\nplayers · game_logs · build_log")]
     DB --> RATE["player_rates(as of date)\nshrink 20 → prior season\nrecent-10 weight 0.35"]
     TS --> OPP["opponent_factors\nclamped 0.80–1.20 · home ×1.02"]
     SC --> GAMES["GameCtx per game"]
     RATE & OPP & GAMES --> PROJ["λ per (player, stat)"]
-    OA & CSV --> PROPS["Prop(line, over, under, book)"]
+    OA & CSV & EP --> PROPS["Prop(line, over, under, book)"]
     PROJ & PROPS --> SIG["prop_signal → paper_bets"]
     BX --> SET["--settle: actual vs line"]
     SET --> DB
@@ -1325,33 +1337,35 @@ sequenceDiagram
     participant You
     participant Tool as nhl_edge.py
     participant DB as nhl.db
-    participant Book as The Odds API
+    participant Book as Odds API / DK via ESPN
     participant An as analysis/06 (py + R)
     Note over You,An: Monday (and before opening night)
     You->>Tool: --build
     Tool->>DB: rosters + game logs (both seasons)
     Note over You,Book: game day, ~2 h before first puck (starters posted)
     You->>Tool: --snapshot --report
-    Tool->>Book: events + player_* markets (1 request per game)
-    Tool->>DB: props rows · paper_bets (strength ≥ 1)
-    Tool-->>You: PAPER ONLY banner · ranked props · reports/nhl-WEEKDAY-DATE.md
+    Tool->>Book: events + player_* markets (1 request per game · no key → ESPN propBets)
+    Tool->>DB: props rows · paper_bets (kind prop strength ≥ 1 · kind agree)
+    Tool-->>You: PAPER ONLY banner · lock + five · ranked props · reports/nhl-WEEKDAY-DATE.md
     You->>DB: gh release create nhl-WEEKDAY-DATE
     Note over You,Book: next morning
     You->>Tool: --settle
     Tool->>DB: boxscore actuals → W/L/P · blocks into game_logs
     Note over You,Book: weekly once the ledger fills — runs today on the game logs
     You->>An: python analysis/06_nhl/nhl_loop.py  and  Rscript …/nhl_loop.R
-    An-->>You: A prop ROI (empty pre-season) · B slices · C walk-forward calibration — same numbers twice
+    An-->>You: A ROI by kind + prop buckets · B slices · C walk-forward calibration — same numbers twice
 ```
 
 **Honest status.** `analysis/06_nhl` (Python + R, agree to 1e‑15 on all 27 calibration rows)
-runs today on the stored game logs and reproduces the table above; its ROI and slice
-sections stay empty until games are played. The projection is validated walk‑forward for
+runs on the stored game logs and reproduces the table above; its ROI and slice
+sections fill as opening-night (2026‑09‑29) props settle, with the agreement board
+(`kind:agree`, the lock) graded as its own row. The projection is validated walk‑forward for
 shots and points and weak for saves. Every threshold
 in the NHL block is a prior; the overreach demotion at +30% is borrowed from what football and
 soccer both showed. Paper only.
 
-**Setting the key** (once): create a file named `.env` in the repo folder containing
+**Setting the key** (once; optional since 2026‑09‑29, the tool falls back to DraftKings via
+ESPN): create a file named `.env` in the repo folder containing
 `ODDS_API_KEY=yourkey` (the file is gitignored), or set the environment variable. The free
 tier is about 500 requests a month; one game day with ten games costs eleven.
 
@@ -1390,7 +1404,7 @@ contact William Brooks Parker via [github.com/wbp318](https://github.com/wbp318)
 |---|---|
 | `cfb_edge.py` | the football tool — everything lives here, section headers navigate it |
 | `soccer_edge.py` | the soccer tool — every league, self-built Elo vs DK 3-way; imports odds math + banner from `cfb_edge` |
-| `nhl_edge.py` | the NHL prop tool — projections from NHL game logs vs The Odds API / CSV lines; same imports |
+| `nhl_edge.py` | the NHL prop tool — projections from NHL game logs vs The Odds API / DraftKings-via-ESPN / CSV lines; value board + agreement board (the lock); same imports |
 | `cfb_gui.py` | optional local browser dashboard over `cfb_edge.py` (stdlib only) |
 | `betting_guide.md` | live‑play reference: thresholds, what to fire on, discipline |
 | `CLAUDE.md` | conventions for Claude Code |

@@ -44,7 +44,7 @@ D ELO_HFA × DRAW_BASE refit"]
         LN["_shared/load_nhl.{py,R}
 load_nhl_bets() · load_game_logs()"]
         LN --> S6["06_nhl
-A prop ROI · B slices
+A ROI by kind (prop · agree) · B slices
 C walk-forward projection calibration"]
     end
     S1 & S2 & S3 & S4 & S5 & S6 --> OUT["_out/*.csv (gitignored)
@@ -75,11 +75,12 @@ nhl_edge.py (06)
   demotions (`SPREAD_OVERREACH_PTS`, `ML_DEAD_ZONE`) and `LIVE_STAKES = False`.
 - `_shared/load_nhl.{py,R}` — `load_nhl_bets()` (settled props with pnl_flat) and
   `load_game_logs(season)` over `nhl.db`. `CFB_NHL_DB` overrides.
-- `06_nhl/` — the NHL loop: A. prop ROI by market × side × strength (bootstrap CI); B. slices
+- `06_nhl/` — the NHL loop: A. paper ROI by kind (`prop` value board, `agree` lock board), then value props by
+  market × side × strength (bootstrap CI); B. slices
   by edge band, market, side; C. walk-forward projection calibration on the stored game logs
   (shrinkage + recent-10 tilt + Poisson, same recipe as `nhl_edge.calibrate`): log-loss vs the
-  naive league-average model and reliability bins for shots / points / saves. A and B are empty
-  until the season opens; C runs today and must match `nhl_edge.py --calibrate` exactly.
+  naive league-average model and reliability bins for shots / points / saves. A and B fill as props
+  settle (season opened 2026-09-29); C runs today and must match `nhl_edge.py --calibrate` exactly.
 - `05_soccer/` — the whole loop for `soccer_edge.py` in one script: A. 3-way paper ROI by
   pick × strength with bootstrap CI; B. slices by edge band, price band, pick; C. Elo
   calibration (binned model prob vs observed) and 3-way log-loss vs the de-vigged closer;

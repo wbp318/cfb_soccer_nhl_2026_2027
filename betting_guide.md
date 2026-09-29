@@ -85,9 +85,13 @@ that used to sit here (Syracuse −3.5, Δ 8.1; Middle Tennessee +13.5, Δ 9.3) 
   and soccer both showed). Price window −250..+250. ⚠thin (< 10 games) never. Goalie flagged
   ⚠not-starter never — check the confirmed starter yourself two hours before puck drop.
 - **Lines:** `.env` with `ODDS_API_KEY=…` (free tier ~500 requests/month; a 10-game night
-  costs 11) or `--lines-file` CSV. Without lines the tool prints projections and logs nothing.
+  costs 11) or `--lines-file` CSV. With neither, DraftKings' two-sided player totals come from
+  ESPN's keyless `propBets` feed (SOG, points, assists, blocks, saves).
+- **The lock, and five good ones:** the prop side the projection *and* the de-vigged line both
+  favour, −250..−110, model over fair by 0..+20%, never saves or ⚠thin, ranked by chance to
+  cash (the football just-win idea). Paper-logged as kind `agree`. No track record yet.
 - **No historical prop prices exist**, so there is no ROI backtest. The ledger starts empty on
-  2026-10-07 and `analysis/06` gets built when it has a few hundred props.
+  2026-09-29 and `analysis/06` gets built when it has a few hundred props.
 
 ## 7. Discipline — the horses lessons carry over
 

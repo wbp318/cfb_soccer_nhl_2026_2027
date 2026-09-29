@@ -1,7 +1,8 @@
 # The NHL prop analysis loop: is the projection any good, and (once the ledger fills) does
 # betting it against posted lines make money?
 #
-#   A. Paper ROI by market x side x strength, flat $1, bootstrap 95% CI (empty pre-season).
+#   A. Paper ROI by kind (prop = value board, agree = lock board), then value props by
+#      market x side x strength, flat $1, bootstrap 95% CI.
 #   B. Slices: edge band, market, side (Wilson CI on hit, flat ROI).
 #   C. Walk-forward projection calibration on the stored game logs (same recipe as
 #      nhl_edge.calibrate): log-loss vs naive league-average + reliability bins.
@@ -48,11 +49,14 @@ section_a <- function(bets) {
   cat(sprintf("A. Paper ROI — %s settled NHL paper props, flat ROI %+.1f%%\n\n",
               format(nrow(bets), big.mark = ","), 100 * mean(bets$pnl_flat)))
   groups <- list(list(market = "ALL", side = "all", strength = "all", g = bets))
-  for (key in split(bets, list(bets$market, bets$side, bets$strength), drop = TRUE))
+  for (key in split(bets, bets$kind))
+    groups[[length(groups) + 1]] <- list(market = paste0("kind:", key$kind[1]), side = "all", strength = "all", g = key)
+  props <- bets[bets$kind == "prop", ]      # the value board; the agree board is its own bucket above
+  for (key in split(props, list(props$market, props$side, props$strength), drop = TRUE))
     groups[[length(groups) + 1]] <- list(market = key$market[1], side = key$side[1], strength = as.character(key$strength[1]), g = key)
-  for (key in split(bets, bets$market))
+  for (key in split(props, props$market))
     groups[[length(groups) + 1]] <- list(market = key$market[1], side = "any", strength = "any", g = key)
-  for (key in split(bets, bets$side))
+  for (key in split(props, props$side))
     groups[[length(groups) + 1]] <- list(market = "ALL", side = key$side[1], strength = "any", g = key)
   rows <- lapply(groups, function(x) {
     g <- x$g

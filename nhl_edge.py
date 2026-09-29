@@ -8,7 +8,9 @@ points; goalie saves. Model side is built from the NHL's public API (api-web.nhl
 keyless): every player's game log is stored in nhl.db and turned into a per-game rate
 with shrinkage toward last season, scaled by the opponent's pace/allowance, then into a
 Poisson probability of clearing the posted line. Market side is The Odds API
-(ODDS_API_KEY in the environment or a gitignored .env) or a CSV of lines you type.
+(ODDS_API_KEY in the environment or a gitignored .env), a CSV of lines you type, or —
+keyless, the default without a key — DraftKings' two-sided player totals via ESPN's
+propBets feed.
 
 Same discipline as cfb_edge / soccer_edge: every flagged prop is paper-logged, settled
 from the boxscore, and nothing is a real-money recommendation until analysis says so
@@ -19,7 +21,7 @@ Sections:
   ---- constants / models ----
   ---- NHL API adapters ----
   ---- projections ----
-  ---- prop lines (Odds API / CSV) ----
+  ---- prop lines (Odds API / ESPN-DraftKings / CSV) ----
   ---- signals ----
   ---- SQLite ----
   ---- calibration ----
@@ -52,10 +54,20 @@ NHL_WEB = "https://api-web.nhle.com/v1"
 NHL_STATS = "https://api.nhle.com/stats/rest/en"
 ODDS_API = "https://api.the-odds-api.com/v4"
 ODDS_SPORT = "icehockey_nhl"
+ESPN_NHL_SCOREBOARD = "https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard"
+ESPN_NHL_CORE = "https://sports.core.api.espn.com/v2/sports/hockey/leagues/nhl"
+ESPN_DK = 100                     # ESPN's provider id for DraftKings
+ESPN_PROP_MARKETS = {             # ESPN propBets type name -> Odds API market key (two-sided totals only;
+    "Total Shots on Goal": "player_shots_on_goal",   # milestones and scorer props are one-sided and can't be de-vigged)
+    "Total Points": "player_points",
+    "Total Assists": "player_assists",
+    "Total Blocked Shots": "player_blocked_shots",
+    "Total Saves": "player_total_saves",
+}
 
 SEASON = 20262027                 # the season we are projecting
 PRIOR_SEASON = 20252026           # the season the prior comes from
-SEASON_START = dt.date(2026, 10, 7)
+SEASON_START = dt.date(2026, 9, 29)
 
 # ---- decision constants (NHL props). Every one is a prior until analysis/06 says otherwise. ----
 MARKETS = {                       # Odds API market -> (stat column, who, label)
@@ -79,6 +91,10 @@ EDGE_OVERREACH_PCT = 30.0         # >= this: strength 0. Prior from CFB + soccer
 SAVES_MAX_STRENGTH = 1            # goalie saves: --calibrate barely beats naive (log-loss 0.613 vs 0.616) -> cap at value
 MAX_PRICE = 250                   # never stake a prop side longer than +250 or shorter than -250
 MIN_PRICE = -250
+AGREE_MIN_PRICE = -250            # agreement board ("winners, not outliers", the football just-win twin):
+AGREE_MAX_PRICE = -110            #   the side model and market both favour, priced -250..-110,
+AGREE_MAX_GAP_PCT = 20.0          #   model over fair by > 0 and <= +20%, never saves, never thin
+GOOD_PICKS_N = 5
 FINDINGS_AS_OF = "2026-09-20"     # no NHL analysis run yet (season opens 2026-10-07) — all priors
 
 
@@ -459,6 +475,55 @@ def fetch_props_oddsapi(key: str, games: list[GameCtx], books: str = "draftkings
     return out
 
 
+def fetch_props_espn(games: list[GameCtx], date: dt.date, log=print) -> list[tuple]:
+    """(game_id, player_name, market, line, over, under, book) — DraftKings via ESPN's propBets feed.
+    Each two-sided total arrives as two consecutive items sharing athlete/type/line, Over first
+    (checked on opening night: Matthews 0.5 PTS -195 then +145). Athlete names come from each $ref."""
+    sb = _get(ESPN_NHL_SCOREBOARD, {"dates": date.strftime("%Y%m%d")})
+    ev_for: dict[int, str] = {}
+    for ev in sb.get("events", []):
+        comp = ev["competitions"][0]
+        teams = {c["homeAway"]: c["team"].get("displayName", "") for c in comp.get("competitors", [])}
+        for g in games:
+            if _team_match(teams.get("home", ""), g.home) and _team_match(teams.get("away", ""), g.away):
+                ev_for[g.id] = ev["id"]
+    pairs: list[tuple] = []                      # (game_id, athlete_ref, market, line, [prices in feed order])
+    for g in games:
+        eid = ev_for.get(g.id)
+        if not eid:
+            continue
+        try:
+            d = _get(f"{ESPN_NHL_CORE}/events/{eid}/competitions/{eid}/odds/{ESPN_DK}/propBets", {"limit": 1000})
+        except requests.HTTPError as e:
+            log(f"  espn props {g.short}: {e}")
+            continue
+        open_: dict[tuple, list] = {}
+        for it in d.get("items", []):
+            market = ESPN_PROP_MARKETS.get((it.get("type") or {}).get("name"))
+            ref = (it.get("athlete") or {}).get("$ref")
+            line = ((it.get("odds") or {}).get("total") or {}).get("value")
+            am = str((((it.get("odds") or {}).get("american") or {}).get("value") or "")).upper()
+            price = 100 if am == "EVEN" else ce._int(am.replace("+", ""))
+            if not market or not ref or line is None or price is None:
+                continue
+            k = (ref.split("?")[0], market, float(line))
+            open_.setdefault(k, []).append(price)
+        pairs += [(g.id, *k, v) for k, v in open_.items() if len(v) == 2]
+    refs = sorted({p[1] for p in pairs})
+
+    def name(ref: str) -> tuple[str, Optional[str]]:
+        try:
+            return ref, _get(ref).get("fullName")
+        except requests.RequestException:
+            return ref, None
+    with ThreadPoolExecutor(max_workers=12) as ex:
+        names = dict(ex.map(name, refs))
+    out = [(gid, names[ref], market, line, prices[0], prices[1], "draftkings")
+           for gid, ref, market, line, prices in pairs if names.get(ref)]
+    log(f"  espn/draftkings: {len(out)} two-sided player totals across {len(ev_for)} games")
+    return out
+
+
 TEAM_WORDS = {"NJD": "devils", "NYI": "islanders", "NYR": "rangers", "PHI": "flyers", "PIT": "penguins", "BOS": "bruins",
               "BUF": "sabres", "MTL": "canadiens", "OTT": "senators", "TOR": "maple leafs", "CAR": "hurricanes",
               "FLA": "panthers", "TBL": "lightning", "WSH": "capitals", "CHI": "blackhawks", "DET": "red wings",
@@ -565,6 +630,54 @@ def ranked_signals(props: list[Prop]) -> list[Signal]:
     return sigs
 
 
+def agree_signal(p: Prop) -> Optional[Signal]:
+    """The side both the projection and the de-vigged line call more likely than not, at a holdable
+    favourite's price, with the model a little (not a lot) above the market. Kind `agree`, its own
+    paper bucket: the opposite question to prop_signal, same as football's just-win board."""
+    if p.p_over is None or p.over is None or p.under is None or p.stat == "saves" or p.player.games < MIN_GAMES:
+        return None
+    fo, fu = devig2(p.over, p.under)
+    if fo is None:
+        return None
+    for side, model, fair, price in (("over", p.p_over, fo, p.over), ("under", 1 - p.p_over, fu, p.under)):
+        if model <= 0.5 or fair <= 0.5 or not (AGREE_MIN_PRICE <= price <= AGREE_MAX_PRICE):
+            continue
+        edge = (model - fair) / fair * 100.0
+        if 0 < edge <= AGREE_MAX_GAP_PCT:
+            return Signal(p, "agree", side, "agree", 1, edge, model, price)
+    return None
+
+
+def agree_board(props: list[Prop]) -> list[Signal]:
+    """Agreement signals, best book per (player, market), most likely to cash first."""
+    best: dict[tuple, Signal] = {}
+    for p in props:
+        if p.game.state not in ("FUT", "PRE"):
+            continue
+        s = agree_signal(p)
+        k = (p.player.id, p.market, s.side if s else None)
+        if s and (k not in best or ce.american_to_decimal(s.price) > ce.american_to_decimal(best[k].price)):
+            best[k] = s
+    return sorted(best.values(), key=lambda s: (-s.truth_p, -s.edge))
+
+
+def lock_and_good(props: list[Prop], n: int = GOOD_PICKS_N) -> tuple[Optional[Signal], list[Signal]]:
+    """The lock is the top of the agreement board (most likely to cash at a holdable price).
+    Good picks are the rest of that board, then the ranked value board, one per player."""
+    ab = agree_board(props)
+    lock = ab[0] if ab else None
+    seen = {lock.prop.player.id} if lock else set()
+    good: list[Signal] = []
+    for s in ab[1:] + ranked_signals(props):
+        if s.prop.player.id in seen:
+            continue
+        good.append(s)
+        seen.add(s.prop.player.id)
+        if len(good) >= n:
+            break
+    return lock, good
+
+
 def stake_for(sig: Signal, bankroll: float) -> Optional[float]:
     return ce.stake_for(sig, bankroll)
 
@@ -640,12 +753,12 @@ def db_paper_log(conn: sqlite3.Connection, sigs: list[Signal], bankroll: float, 
         if s.strength == 0 or s.truth_p is None:
             continue
         p = s.prop
-        if conn.execute("SELECT 1 FROM paper_bets WHERE game_id=? AND player_id=? AND market=?",
-                        (p.game.id, p.player.id, p.market)).fetchone():
+        if conn.execute("SELECT 1 FROM paper_bets WHERE game_id=? AND player_id=? AND market=? AND kind=?",
+                        (p.game.id, p.player.id, p.market, s.kind)).fetchone():
             continue
         conn.execute("INSERT INTO paper_bets(game_id,player_id,logged_at,kind,market,side,line,price,truth_p,edge,"
                      "strength,stake,book) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                     (p.game.id, p.player.id, now.isoformat(), "prop", p.market, s.side, p.line, s.price, s.truth_p,
+                     (p.game.id, p.player.id, now.isoformat(), s.kind, p.market, s.side, p.line, s.price, s.truth_p,
                       s.edge, s.strength, stake_for(s, bankroll) or 0.0, p.book))
         n += 1
     conn.commit()
@@ -797,6 +910,25 @@ def render_top(props: list[Prop], bankroll: float, n: int = 15) -> str:
     return "\n".join(out)
 
 
+def _lock_row(s: Signal) -> tuple[str, str]:
+    p = s.prop
+    fair = devig2(p.over, p.under)[0 if s.side == "over" else 1]
+    tag = "agree" if s.kind == "agree" else s.label
+    return (f"{s.what} {ce.fmt_ml(s.price)} @{p.book}",
+            f"proj {p.mean:.2f} → model {100 * s.truth_p:.0f}% vs fair {100 * fair:.0f}% (+{s.edge:.0f}%, {tag})")
+
+
+def render_lock(props: list[Prop]) -> str:
+    lock, good = lock_and_good(props)
+    if not lock and not good:
+        return "no lock today: nothing on the agreement or value boards"
+    out = ["The lock, and five good ones (paper only)"]
+    for tag, s in ([("LOCK", lock)] if lock else []) + [(f"good {i}", s) for i, s in enumerate(good, 1)]:
+        play, why = _lock_row(s)
+        out.append(f"{tag:<7}{s.prop.game.kick_local.strftime('%I:%M%p').lower():<9}{s.prop.game.short:<12}{play:<48} {why}")
+    return "\n".join(out)
+
+
 def render_projections(props: list[Prop], n: int = 40) -> str:
     ps = sorted([p for p in props if p.mean is not None], key=lambda p: (p.game.kick_local, p.player.team, -p.mean))[:n]
     out = [f"{'Game':<12}{'Player':<26}{'Pos':<4}{'Market':<6}{'Line':>6}{'Proj':>7}{'P(over)':>9}{'Over/Under':>13}  Book"]
@@ -822,7 +954,20 @@ def write_report(games: list[GameCtx], props: list[Prop], bankroll: float, date:
          f"recent-{RECENT_GAMES} weight {RECENT_WEIGHT:.2f}) × opponent pace/allowance (clamped "
          f"{OPP_FACTOR_CAP[0]:.2f}–{OPP_FACTOR_CAP[1]:.2f}) → Poisson P(over). Tiers +{EDGE_PCT:g}% / +{EDGE_STRONG_PCT:g}%, "
          f"≥ +{EDGE_OVERREACH_PCT:g}% demoted (⚠overreach). All priors until analysis/06 runs.",
-         "", "## 1. Ranked props", "",
+         "", "## The lock, and five good ones", "",
+         f"**The lock** is the top of the agreement board: the prop side the projection and the de-vigged "
+         f"line both favour, priced {AGREE_MIN_PRICE}..{AGREE_MAX_PRICE}, model above fair by no more than "
+         f"+{AGREE_MAX_GAP_PCT:g}%, ranked by chance to cash. **Good** is the rest of that board, then the "
+         "ranked value props (§1), one per player. Paper only; the agreement board has no track record yet.", "",
+         "| | Puck (CT) | Game | Play | Why |", "|---|---|---|---|---|"]
+    lock, good = lock_and_good(props)
+    for tag, s in ([("**LOCK**", lock)] if lock else []) + [(f"good {i}", s) for i, s in enumerate(good, 1)]:
+        play, why = _lock_row(s)
+        L.append(f"| {tag} | {s.prop.game.kick_local.strftime('%I:%M %p').lstrip('0')} | {s.prop.game.short} | "
+                 f"{'**' + play + '**' if s is lock else play} | {why} |")
+    if not lock and not good:
+        L.append("| — | — | — | nothing clears either board today | |")
+    L += ["", "## 1. Ranked props", "",
          "| # | Tag | Game | Play | Price | Book | Proj | Model vs fair | $Bet (paper) | Flags |", "|---|---|---|---|---|---|---|---|---|---|"]
     for i, s in enumerate(sigs, 1):
         p = s.prop
@@ -913,7 +1058,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         if key:
             rows, source = fetch_props_oddsapi(key, games, log=lambda m: print(m, file=sys.stderr)), "The Odds API"
         else:
-            print("no ODDS_API_KEY (env or .env) and no --lines-file: projections only", file=sys.stderr)
+            print("no ODDS_API_KEY (env or .env) and no --lines-file: DraftKings via ESPN", file=sys.stderr)
+            rows, source = fetch_props_espn(games, date, log=lambda m: print(m, file=sys.stderr)), "DraftKings via ESPN"
     props = attach_props(rows, games, players)
     for pr in props:
         project(pr)
@@ -937,9 +1083,10 @@ def main(argv: Optional[list[str]] = None) -> int:
             print("\n" + ce.stakes_banner())
     if props:
         print(render_top(props, a.bankroll, a.top))
+        print("\n" + render_lock(props))
     if a.snapshot and props:
         n = db_persist(conn, games, props, now)
-        k = db_paper_log(conn, ranked_signals(props), a.bankroll, now)
+        k = db_paper_log(conn, ranked_signals(props) + agree_board(props), a.bankroll, now)
         print(f"snapshot: {n} prop rows, {k} new paper plays → {a.db}")
     if a.report:
         path = write_report(games, props, a.bankroll, date, now, db_paper_summary(conn), source)

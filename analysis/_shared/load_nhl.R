@@ -16,7 +16,7 @@ NHL_DB <- if (nzchar(Sys.getenv("CFB_NHL_DB"))) Sys.getenv("CFB_NHL_DB") else
   normalizePath(file.path(.nhl_shared_dir, "..", "..", "nhl.db"), mustWork = FALSE)
 
 .NBETS_SQL <- "
-SELECT p.id, p.game_id, g.date, p.player_id, pl.name, pl.position, p.market, p.side, p.line, p.price,
+SELECT p.id, p.game_id, g.date, p.player_id, pl.name, pl.position, p.kind, p.market, p.side, p.line, p.price,
        p.truth_p, p.edge, p.strength, p.stake, p.book, p.actual, p.result, p.profit
 FROM paper_bets p
 JOIN games g ON g.id = p.game_id
