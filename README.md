@@ -142,7 +142,7 @@ cd cfb_soccer_nhl_2026_2027
 pip install -r requirements.txt            # runtime: just `requests`
 pip install -r analysis/requirements-py.txt -r requirements-dev.txt   # pandas/numpy + ruff/pytest
 python cfb_edge.py --top 10                # first live run — should print next Saturday's outliers
-python -m pytest -q tests                  # 83 passed
+python -m pytest -q tests                  # 85 passed
 ```
 
 No API keys, no `.env`, nothing to sign up for. If the first live run prints a 403, read
@@ -200,7 +200,7 @@ flowchart TB
 
     subgraph NHL["1c · NHL props — nhl_edge.py (NHL public API + The Odds API / DK via ESPN)"]
         direction LR
-        NAPI(("NHL api-web\nrosters · game logs\nboxscores · team summary")) --> PROJ["--build → nhl.db\nplayer_rates × opponent factor\n→ Poisson P(over)"]
+        NAPI(("NHL api-web\nrosters · game logs\nboxscores · team summary")) --> PROJ["--build → nhl.db\nplayer_rates × opponent factor\n→ Poisson P(over)\nsaves: gamma-Poisson k=20"]
         OAPI(("The Odds API\nplayer_* markets\nODDS_API_KEY")) --> PROJ
         EDK(("no key: DraftKings\nvia ESPN propBets")) --> PROJ
         PROJ --> SIG3["prop_signal\nmodel vs de-vigged line\n⚠overreach · ⚠thin · ⚠saves-model"]
@@ -220,13 +220,13 @@ flowchart TB
         L --> A3["03 line move\nfollow-the-money"]
         L --> A4["04 deep dive\nhit % + ROI by edge · price · |spread|\ncalibration"]
         LS["_shared/load_soccer\n.py ⇄ .R"] --> A5["05 soccer loop\n3-way ROI · slices · Elo calibration\nHFA × draw-base refit"]
-        LN["_shared/load_nhl\n.py ⇄ .R"] --> A6["06 NHL loop\nROI by kind (prop · agree) · slices\nwalk-forward projection calibration"]
+        LN["_shared/load_nhl\n.py ⇄ .R"] --> A6["06 NHL loop\nROI by kind (prop · agree) · slices\ncalibration + dispersion grid\nD teammate correlation"]
         A1 & A2 & A3 & A4 & A5 & A6 --> AGREE{"Python == R?"}
     end
 
     subgraph GUARD["4 · Guard rails (no internet, no real data)"]
         direction LR
-        T["tests/\npytest · 83 cases\nodds math · signals · grading · SQLite"]
+        T["tests/\npytest · 85 cases\nodds math · signals · grading · SQLite"]
         CI["GitHub Actions\npy 3.12 + 3.13 · R 4.4\nlint · tests · empty-DB runs"]
     end
 
@@ -305,7 +305,7 @@ flowchart LR
     SDB[("soccer.db")] --> LSB["load_soccer_bets() · load_soccer_matches()\nload_results()"]
     LSB --> S5["05 soccer_loop\nQ-A: does the 3-way ledger make money? (bootstrap CI)\nQ-B: by edge band · price band · pick\nQ-C: is Elo calibrated? log-loss vs the closer\nQ-D: refit ELO_HFA × DRAW_BASE on the results table"]
     NDB[("nhl.db")] --> LNB["load_nhl_bets() · load_game_logs()"]
-    LNB --> S6["06 nhl_loop\nQ-A: does the prop ledger make money? by kind prop · agree (bootstrap CI)\nQ-B: by edge band · market · side\nQ-C: walk-forward projection calibration\nlog-loss vs league average · reliability bins"]
+    LNB --> S6["06 nhl_loop\nQ-A: does the prop ledger make money? by kind prop · agree (bootstrap CI)\nQ-B: by edge band · market · side\nQ-C: walk-forward projection calibration\nlog-loss vs league average · reliability bins · dispersion k\nQ-D: same-game correlation → TEAM_RHO"]
 
     S1 & S2 & S3 & S4 & S5 & S6 --> OUTC["analysis/_out/*.csv\n(gitignored)"]
     S1 & S2 & S3 & S4 & S5 & S6 --> STD["stdout tables\nsame numbers in .py and .R"]
@@ -604,7 +604,7 @@ flowchart LR
     L3 & L4 --> S5["05 soccer loop\n3-way ROI · slices · Elo calibration\nHFA × draw-base refit"]
     NDB[("nhl.db")] --> L5["_shared/load_nhl.py"]
     NDB --> L6["_shared/load_nhl.R"]
-    L5 & L6 --> S6["06 NHL loop\nprop ROI · slices\nwalk-forward projection calibration"]
+    L5 & L6 --> S6["06 NHL loop\nprop ROI · slices\ncalibration + dispersion · teammate correlation"]
     S1 & S2 & S3 & S4 & S5 & S6 --> V{"Py == R ?"}
     V -- yes --> C["update constants in cfb_edge.py / soccer_edge.py / nhl_edge.py\nSPREAD_OVERREACH_PTS · ML_DEAD_ZONE · LIVE_STAKES\nELO_HFA · DRAW_BASE · SHRINK_GAMES · RECENT_WEIGHT\nbump FINDINGS_AS_OF + CHANGELOG.md entry"]
     V -- no --> BUG["fix the runtime that's wrong"]
@@ -726,7 +726,7 @@ flowchart LR
     PUSH --> RJ["R job\n(r-lib/actions, R 4.4)"]
     PY --> P1["py_compile\ncfb_edge.py + soccer_edge.py + nhl_edge.py + analysis/*.py"]
     P1 --> P2["ruff check\n(rule set pinned in ruff.toml)"]
-    P2 --> PT["pytest tests/\n83 cases · no network"]
+    P2 --> PT["pytest tests/\n85 cases · no network"]
     PT --> P3["cfb_edge.py --help\n(argparse still parses)"]
     P3 --> P4["--paper-show --db scratch.db\n(SCHEMA + MIGRATIONS bootstrap)"]
     P4 --> P5["run all 6 analysis .py\nagainst empty scratch DBs\nCFB_DB · CFB_SOCCER_DB · CFB_NHL_DB"]
@@ -1165,7 +1165,7 @@ flowchart TD
     START["python nhl_edge.py [flags]"] --> ARGS{"which flag?"}
     ARGS -->|"--paper-show"| PS["open nhl.db\nprint paper_bets by market × side × strength"] --> END
     ARGS -->|"--build"| B1["standings/now → 32 clubs\nroster/TEAM/20262027 → players"] --> B2["12 threads: player/ID/game-log\nfor 20252026 and 20262027\n→ game_logs (skaters: shots·points·goals·assists·PPP\ngoalies: saves·shots against·started)"] --> END
-    ARGS -->|"--calibrate"| C1["walk forward through 20252026 logs\nλ from games strictly before each game\nP(X > line) at 2.5 SOG · 0.5 PTS · 27.5 SV\nlog-loss vs league-average · reliability bins"] --> END
+    ARGS -->|"--calibrate"| C1["walk forward through 20252026 logs\nλ from games strictly before each game\nP(X > line) at 2.5 SOG · 0.5 PTS · 27.5 SV\nlog-loss vs league-average · reliability bins\ndispersion grid k ∈ ∞,50,20,12,8,5,3,2"] --> END
     ARGS -->|"--settle"| S1["for every game with a pending paper prop:\ngamecenter/ID/boxscore → actual stat\n(PPP from the game log)\ngrade W/L/P · store blocks into game_logs"] --> END
 
     ARGS -->|"anything else"| F1["schedule/DATE → regular-season games"]
@@ -1176,10 +1176,11 @@ flowchart TD
     L -->|"ODDS_API_KEY"| L2["Odds API: events → per-event odds\n7 markets · DK/FD/MGM/Caesars"]
     L -->|"neither"| L3["fetch_props_espn: DraftKings via ESPN\nSOG · PTS · A · BLK · SV totals"]
     L1 & L2 & L3 --> M["attach_props: name + team → rostered player\nunmatched or ambiguous rows dropped"]
-    M --> P["project(): λ = rate × opponent factor\nP(over) from Poisson, push-conditioned"]
+    M --> P["project(): λ = rate × opponent factor\nP(over) from Poisson (saves: gamma-Poisson k=20), push-conditioned"]
     P --> SIG["prop_signal: model vs de-vigged over/under\n+8% value · +15% STRONG · ≥ +30% ⚠overreach\n⚠thin · ⚠saves-model · ⚠not-starter"]
     P --> AG["agree_board → lock_and_good\nboth favour the side · -250..-110 · gap ≤ +20%"]
-    SIG & AG --> R["render_projections · render_top · render_lock\nall under stakes_banner()"]
+    AG --> SIM["simulate_card: 20,000 nights\nteammates correlated (TEAM_RHO)\nmodel vs market"]
+    SIG & AG & SIM --> R["render_projections · render_top · render_lock\nall under stakes_banner()"]
     R --> SN{"--snapshot?"}
     SN -->|yes| DBW["props rows + paper_bets\nkind prop (strength ≥ 1) · kind agree"] --> REP
     SN -->|no| REP{"--report?"}
@@ -1245,7 +1246,7 @@ weeks rather than at the All‑Star break.
 |---|---|---|---|---|
 | shots over 2.5 | 36,352 | **0.4742** | 0.5397 | model better by 0.066; every bin within 2 pp except the 0.7–0.8 bin (n=77) |
 | points over 0.5 | 36,352 | **0.6097** | 0.6543 | model better by 0.045; bins within 2 pp everywhere |
-| goalie saves over 27.5 | 1,807 | **0.6131** | 0.6162 | barely better than naive; low bins under‑predict, high bins over‑predict |
+| goalie saves over 27.5 | 1,807 | **0.6131** Poisson · **0.6032** gamma‑Poisson k=20 (live since 2026‑09‑29) | 0.6162 | Poisson barely beat naive; with the rate treated as uncertain it beats naive by 0.013 (see Simulations) |
 
 That is the honest reason **goalie saves are capped at "value"** (`SAVES_MAX_STRENGTH = 1`,
 tag ⚠saves‑model): the goalie's own history says little; shots against are the opponent's
@@ -1253,6 +1254,47 @@ doing, and the walk‑forward test has no opponent factor in it. The live model 
 is untested until the ledger fills. Shots and points are where the projection has earned
 its keep. What this test cannot say is whether any of it beats a **posted line**: no historical
 prop prices exist, so ROI starts at zero on opening night, paper only.
+
+### Simulations (added 2026‑09‑29)
+
+Two pieces, both checked walk‑forward on 2025‑26 and reproduced in `analysis/06` (Python == R
+to 1e‑14):
+
+1. **The rate itself is uncertain.** Instead of one fixed λ, a player's rate is drawn from a
+   Gamma with shape *k* around the projection, then the count from Poisson(λ) (a gamma‑Poisson,
+   i.e. negative binomial; the closed form is what a simulation of it converges to, and a test
+   checks the two agree). `--calibrate` now searches *k* ∈ {∞, 50, 20, 12, 8, 5, 3, 2}:
+
+   | stat, line | Poisson (k = ∞) | best k | verdict |
+   |---|---|---|---|
+   | shots over 2.5 | **0.4740** | ∞ | Poisson already best; every finite k is worse |
+   | points over 0.5 | **0.6096** | 50 (0.6096) | no difference in 4 decimals, stays Poisson |
+   | goalie saves over 27.5 | 0.6131 | **20 (0.6032)** | clearly better; naive is 0.6162 |
+
+   So `DISPERSION = {"saves": 20}` and skaters stay Poisson. Saves now beat naive by 0.013
+   instead of 0.003. `SAVES_MAX_STRENGTH = 1` stays until the ledger says otherwise.
+2. **The card simulation** (`simulate_card`, 20,000 nights, fixed seed). Each ticket keeps its
+   own chance to cash; the simulation adds how tickets move together. A one‑factor Gaussian
+   copula per team‑game uses latent ρ = sin(π r / 2), where *r* is the measured same‑game
+   correlation of "had ≥ 1" (`analysis/06` D, 2025‑26): teammates' points r = 0.068 (ρ 0.107),
+   assists r = 0.035 (ρ 0.055), opponents ≈ −0.01 (treated as independent). It runs twice,
+   trusting the model and then trusting the de‑vigged market, and reports expected hits,
+   P(all), P(one miss or better), flat‑$1 profit (mean, P(up), 5th–95th percentile) and the EV of
+   parlaying the whole card. On opening night the lock + five came out at 4.45 of 6 and 51% to
+   finish up if the model is right, versus 3.89 of 6 and −$0.38 if the market is right. At
+   −200 to −250 you need five of six just to profit.
+
+```mermaid
+flowchart LR
+    CARD["lock + five\n(Signal list)"] --> SRC{"whose probabilities?"}
+    SRC -->|"model"| PM["truth_p per ticket"]
+    SRC -->|"market"| PK["de-vigged fair per ticket"]
+    PM & PK --> COP["per team-game: Z ~ N(0,1)\nticket latent = √ρ·Z + √(1−ρ)·ε\nover if latent > Φ⁻¹(1 − P(over))\nρ = TEAM_RHO (0.107 PTS · 0.055 A)"]
+    COP --> SIMN["20,000 nights\nseed 20260929"]
+    SIMN --> OUT["exp. hits · P(all) · P(≥ n−1)\nflat $1: mean · P(up) · 5–95%\nparlay EV"]
+    OUT --> REP["report: Simulated nights of that card\nterminal: under the lock"]
+```
+
 
 ### What the NHL database stores
 
@@ -1353,7 +1395,7 @@ sequenceDiagram
     Tool->>DB: boxscore actuals → W/L/P · blocks into game_logs
     Note over You,Book: weekly once the ledger fills — runs today on the game logs
     You->>An: python analysis/06_nhl/nhl_loop.py  and  Rscript …/nhl_loop.R
-    An-->>You: A ROI by kind + prop buckets · B slices · C walk-forward calibration — same numbers twice
+    An-->>You: A ROI by kind + prop buckets · B slices · C calibration + dispersion · D teammate correlation — same numbers twice
 ```
 
 **Honest status.** `analysis/06_nhl` (Python + R, agree to 1e‑15 on all 27 calibration rows)

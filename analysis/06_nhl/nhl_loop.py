@@ -7,9 +7,12 @@ betting it against posted lines make money?
   C. Walk-forward projection calibration on the stored game logs (same recipe as
      nhl_edge.calibrate: shrinkage toward league average, recent-10 tilt, Poisson): log-loss
      vs the naive league-average model and a reliability table for shots / points / saves.
-     This runs today on 46k player-games and is the pre-season evidence.
+     Also the dispersion grid: log-loss with the rate itself uncertain (gamma-Poisson, shape k)
+     vs plain Poisson — the evidence behind nhl_edge.DISPERSION.
+  D. Same-game correlation of skater outcomes (teammates, opponents) → nhl_edge.TEAM_RHO,
+     which the card simulation uses.
 
-Output: analysis/_out/nhl_roi.csv, nhl_slices.csv, nhl_calibration.csv.
+Output: analysis/_out/nhl_roi.csv, nhl_slices.csv, nhl_calibration.csv, nhl_correlation.csv.
 Mirrors nhl_loop.R — keep in lockstep. Point estimates must match; bootstrap CIs may differ
 in the last digit.
 """
@@ -39,6 +42,8 @@ RECENT_GAMES = 10
 RECENT_WEIGHT = 0.35
 MIN_PRIOR = 10
 LINES = {"shots": 2.5, "points": 0.5, "saves": 27.5}
+DISPERSION = {"saves": 20.0}          # gamma-Poisson shape per stat; absent = Poisson
+DISPERSION_GRID = [None, 50.0, 20.0, 12.0, 8.0, 5.0, 3.0, 2.0]
 
 EDGE_BINS, EDGE_LABELS = [0, 8, 15, 30, 50, 100000], ["0-8", "8-15", "15-30", "30-50", "50+"]
 
@@ -64,8 +69,22 @@ def poisson_cdf(k: int, lam: float) -> float:
     return min(1.0, total)
 
 
-def p_over(lam: float, line: float) -> float:
-    return 1.0 - poisson_cdf(math.floor(line), lam)
+def nb_cdf(k: int, lam: float, disp: float) -> float:
+    """P(X <= k), X ~ Poisson(λ), λ ~ Gamma(shape=disp, mean=lam) — negative binomial."""
+    if k < 0:
+        return 0.0
+    q = lam / (disp + lam)
+    term = (1.0 - q) ** disp
+    total = term
+    for i in range(k):
+        term *= (i + disp) / (i + 1) * q
+        total += term
+    return min(1.0, total)
+
+
+def p_over(lam: float, line: float, disp: float | None = None) -> float:
+    k = math.floor(line)
+    return 1.0 - (poisson_cdf(k, lam) if disp is None else nb_cdf(k, lam, disp))
 
 
 # ---------------------------------------------------------------- A + B (ledger)
@@ -132,6 +151,8 @@ def section_c(logs: pd.DataFrame) -> pd.DataFrame:
             continue
         lg = float(d[stat].mean())
         pn = p_over(lg, line)
+        disp = DISPERSION.get(stat)
+        pairs: list[tuple[float, float]] = []
         bins: dict[int, list] = {}
         ll_m = ll_n = 0.0
         n = 0
@@ -144,8 +165,9 @@ def section_c(logs: pd.DataFrame) -> pd.DataFrame:
                 rv = hist[-RECENT_GAMES:]
                 if len(rv) >= 5:
                     lam = (1 - RECENT_WEIGHT) * lam + RECENT_WEIGHT * rv.mean()
-                po = p_over(lam, line)
+                po = p_over(lam, line, disp)
                 y = 1.0 if vs[i] > line else 0.0
+                pairs.append((lam, y))
                 eps = 1e-6
                 ll_m += -(y * math.log(max(po, eps)) + (1 - y) * math.log(max(1 - po, eps)))
                 ll_n += -(y * math.log(max(pn, eps)) + (1 - y) * math.log(max(1 - pn, eps)))
@@ -166,6 +188,49 @@ def section_c(logs: pd.DataFrame) -> pd.DataFrame:
             print(f"  {b / 10:.1f}-{(b + 1) / 10:.1f}     {c:>7}{100 * sp / c:>7.1f}%{100 * sy / c:>7.1f}%{100 * (sy - sp) / c:>+6.1f}")
             rows.append({"stat": stat, "line": line, "bin": f"{b / 10:.1f}-{(b + 1) / 10:.1f}", "n": c, "pred": sp / c, "obs": sy / c})
         rows.append({"stat": stat, "line": line, "bin": "logloss", "n": n, "pred": ll_m / n, "obs": ll_n / n})
+        grid = []
+        for k in DISPERSION_GRID:          # does an uncertain rate (gamma-Poisson) beat plain Poisson?
+            ll = 0.0
+            for lam, y in pairs:
+                po = p_over(lam, line, k)
+                ll += -(y * math.log(max(po, 1e-6)) + (1 - y) * math.log(max(1 - po, 1e-6)))
+            tag = "inf" if k is None else f"{k:g}"
+            grid.append(f"{tag} {ll / n:.4f}")
+            rows.append({"stat": stat, "line": line, "bin": f"k={tag}", "n": n, "pred": ll / n, "obs": float("nan")})
+        print(f"  dispersion k (inf = Poisson; live uses {'inf' if disp is None else f'{disp:g}'}): " + " · ".join(grid))
+    return pd.DataFrame(rows)
+
+
+# ---------------------------------------------------------------- D (teammate correlation)
+
+def section_d(logs: pd.DataFrame) -> pd.DataFrame:
+    """Pooled Pearson correlation of 'had ≥ 1' indicators over every ordered pair of skaters in the
+    same team-game (and across the two teams of a game), in closed form from per-team sums; latent
+    ρ = sin(π r / 2) is what nhl_edge.TEAM_RHO feeds the card simulation's Gaussian copula."""
+    rows = []
+    sk = logs[logs.toi.notna()]
+    print("\nD. Same-game correlation of skater outcomes (feeds nhl_edge.TEAM_RHO)")
+    print(f"  {'stat':<8}{'pairs':<10}{'n pairs':>12}{'r':>9}{'latent ρ':>10}")
+    for stat in ("points", "assists"):
+        d = sk[sk[stat].notna()]
+        g = d.assign(x=(d[stat] >= 1).astype(float)).groupby(["game_id", "team"], sort=True).x.agg(["sum", "count"])
+        s_, n_ = g["sum"].to_numpy(), g["count"].to_numpy()
+        npair = float((n_ * (n_ - 1)).sum())
+        m = float((s_ * (n_ - 1)).sum()) / npair
+        exy = float((s_ * s_ - s_).sum()) / npair
+        r_tm = (exy - m * m) / (m * (1 - m))
+        gg = g.reset_index()
+        both = gg.groupby("game_id").filter(lambda t: len(t) == 2).sort_values(["game_id", "team"])
+        a, b = both.iloc[0::2], both.iloc[1::2]
+        sa, na, sb, nb = (a["sum"].to_numpy(), a["count"].to_numpy(), b["sum"].to_numpy(), b["count"].to_numpy())
+        opp_pairs = float((2 * na * nb).sum())
+        mo = float((sa * nb + sb * na).sum()) / opp_pairs
+        exy_o = float((2 * sa * sb).sum()) / opp_pairs
+        r_op = (exy_o - mo * mo) / (mo * (1 - mo))
+        for who, r, n in (("team", r_tm, npair), ("opp", r_op, opp_pairs)):
+            rho = math.sin(math.pi * r / 2)
+            print(f"  {stat:<8}{who:<10}{n:>12,.0f}{r:>9.4f}{rho:>10.4f}")
+            rows.append({"stat": stat, "pairs": who, "n_pairs": n, "r": r, "latent_rho": rho})
     return pd.DataFrame(rows)
 
 
@@ -174,7 +239,7 @@ def main() -> None:
     rng = np.random.default_rng(SEED)
     bets = load_nhl_bets()
     if bets.empty:
-        print("no settled NHL paper props yet (season opens 2026-10-07) — skipping A and B")
+        print("no settled NHL paper props yet (season opened 2026-09-29) — skipping A and B")
     else:
         section_a(bets, rng).to_csv(OUT_DIR / "nhl_roi.csv", index=False)
         section_b(bets).to_csv(OUT_DIR / "nhl_slices.csv", index=False)
@@ -183,6 +248,7 @@ def main() -> None:
         print("no game logs in nhl.db — run nhl_edge.py --build")
         return
     section_c(logs).to_csv(OUT_DIR / "nhl_calibration.csv", index=False)
+    section_d(logs).to_csv(OUT_DIR / "nhl_correlation.csv", index=False)
     print(f"\nwrote {OUT_DIR / 'nhl_*.csv'}")
 
 

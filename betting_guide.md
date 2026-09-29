@@ -77,10 +77,13 @@ that used to sit here (Syracuse −3.5, Δ 8.1; Middle Tennessee +13.5, Δ 9.3) 
 
 - **What is projected:** shots, points, goals, assists, blocks, PP points, goalie saves. Rate
   = this season shrunk to last season (20 games), 35% tilt to the last 10, × opponent
-  shots/goals allowed vs league (0.80–1.20), × 1.02 at home → Poisson P(over).
+  shots/goals allowed vs league (0.80–1.20), × 1.02 at home → Poisson P(over); saves use gamma-Poisson k=20
+  (the rate itself uncertain; beats plain Poisson walk-forward).
 - **Trust order:** shots and points (walk-forward log-loss beats naive by 0.066 / 0.045, bins
   within 2 pp) → goals / assists / PPP (same machinery, not separately tested) → **saves
-  last** (barely beats naive; capped at value, ⚠saves-model).
+  last** (beats naive by 0.013 with k=20, still capped at value, ⚠saves-model).
+- **Read the card simulation before playing the lock + five together:** at −200..−250 you need
+  about five of six just to be up. The report shows it under the model's odds and the market's.
 - **Tiers:** +8% value, +15% STRONG, ≥ +30% ⚠overreach never staked (borrowed from what CFB
   and soccer both showed). Price window −250..+250. ⚠thin (< 10 games) never. Goalie flagged
   ⚠not-starter never — check the confirmed starter yourself two hours before puck drop.

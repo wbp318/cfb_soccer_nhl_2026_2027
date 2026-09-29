@@ -45,7 +45,8 @@ D ELO_HFA × DRAW_BASE refit"]
 load_nhl_bets() · load_game_logs()"]
         LN --> S6["06_nhl
 A ROI by kind (prop · agree) · B slices
-C walk-forward projection calibration"]
+C calibration + dispersion grid
+D same-game correlation"]
     end
     S1 & S2 & S3 & S4 & S5 & S6 --> OUT["_out/*.csv (gitignored)
 + stdout tables"]
@@ -79,8 +80,12 @@ nhl_edge.py (06)
   market × side × strength (bootstrap CI); B. slices
   by edge band, market, side; C. walk-forward projection calibration on the stored game logs
   (shrinkage + recent-10 tilt + Poisson, same recipe as `nhl_edge.calibrate`): log-loss vs the
-  naive league-average model and reliability bins for shots / points / saves. A and B fill as props
-  settle (season opened 2026-09-29); C runs today and must match `nhl_edge.py --calibrate` exactly.
+  naive league-average model and reliability bins for shots / points / saves, plus the dispersion
+  grid (gamma-Poisson shape k vs Poisson) behind `nhl_edge.DISPERSION`; D. same-game correlation of
+  skater "had ≥ 1" outcomes (teammates, opponents) in closed form → latent ρ = sin(πr/2) behind
+  `nhl_edge.TEAM_RHO`, which the card simulation uses. A and B fill as props settle (season opened
+  2026-09-29); C and D run today and must match `nhl_edge.py --calibrate` / the constants exactly.
+  If you change `DISPERSION`, the grid, or `TEAM_RHO` in the tool, change the twin too.
 - `05_soccer/` — the whole loop for `soccer_edge.py` in one script: A. 3-way paper ROI by
   pick × strength with bootstrap CI; B. slices by edge band, price band, pick; C. Elo
   calibration (binned model prob vs observed) and 3-way log-loss vs the de-vigged closer;

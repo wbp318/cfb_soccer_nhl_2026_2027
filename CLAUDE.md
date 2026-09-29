@@ -45,7 +45,7 @@ python nhl_edge.py --settle
 
 # checks — run all four before every push
 ruff check cfb_edge.py cfb_gui.py soccer_edge.py nhl_edge.py analysis tests
-python -m pytest -q tests                           # 83 cases, no network
+python -m pytest -q tests                           # 85 cases, no network
 python -m pytest -q tests/test_soccer_edge.py -k draw   # one file / one test
 python analysis/05_soccer/soccer_loop.py && "C:/Program Files/R/R-4.4.2/bin/Rscript" analysis/05_soccer/soccer_loop.R
 ```
@@ -99,7 +99,8 @@ CIs may differ in the last place. To change a constant: run both runtimes, confi
 agree, edit the constants block, bump `FINDINGS_AS_OF`, update the README status table
 (football "Before you bet", soccer "Honest status", NHL calibration table), add a
 `CHANGELOG.md` entry citing the run, commit, push, cut a `rules-<date>` release. `05` and `06`
-re-implement the Elo replay and the projection recipe on purpose (both runtimes need them);
+re-implement the Elo replay, the projection recipe, the dispersion grid and the
+teammate correlation on purpose (both runtimes need them);
 if you change `elo_update` or the shrinkage/recent-tilt/Poisson recipe in a tool, change
 the analysis twin too.
 
@@ -115,8 +116,11 @@ the analysis twin too.
 - `LIVE_STAKES = False` for all three. Flip it only when a bucket's 95% CI in the ROI
   script clears zero. Stakes are still computed and paper-logged so the sample grows.
 - NHL `--calibrate` (walk-forward, 2025-26): shots and points beat naive clearly and are
-  calibrated; goalie saves barely beat naive, hence `SAVES_MAX_STRENGTH = 1`. No historical
-  prop prices exist, so NHL ROI is untested until the season.
+  calibrated; goalie saves barely beat naive under Poisson (hence `SAVES_MAX_STRENGTH = 1`),
+  and beat it by 0.013 as gamma-Poisson k=20 (`DISPERSION`, 2026-09-29); skaters stay Poisson
+  (every finite k is no better). `simulate_card` (copula, `TEAM_RHO` from `analysis/06` D) runs
+  the lock + five 20,000 times under model and market odds; it needs numpy. No historical
+  prop prices exist, so NHL ROI is untested until the ledger fills.
 - Football demotions that predate the loop and stay: FCS side (generic FPI rating; the first
   bug put UT Martin +41.5 on top of the board), |spread| ≥ 28, steam against FPI, dogs > +250
   capped, price window −300..+400, 5% bankroll cap after quarter-Kelly.

@@ -15,7 +15,9 @@ propBets feed.
 Same discipline as cfb_edge / soccer_edge: every flagged prop is paper-logged, settled
 from the boxscore, and nothing is a real-money recommendation until analysis says so
 (LIVE_STAKES is shared with cfb_edge). --calibrate walks forward through last season so
-the projection is tested before the first puck drops.
+the projection is tested before the first puck drops. Saves use a gamma-Poisson (the rate
+itself uncertain), and simulate_card runs the lock + five 20,000 times with teammates
+correlated, under the model's odds and the market's.
 
 Sections:
   ---- constants / models ----
@@ -39,6 +41,7 @@ import sqlite3
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from statistics import NormalDist
 from typing import Optional
 
 import requests
@@ -88,13 +91,21 @@ HOME_FACTOR = 1.02                # skaters shoot a touch more at home
 EDGE_PCT = 8.0                    # model P(side) over de-vigged fair, %: value
 EDGE_STRONG_PCT = 15.0            # STRONG
 EDGE_OVERREACH_PCT = 30.0         # >= this: strength 0. Prior from CFB + soccer: the biggest gaps lose most
-SAVES_MAX_STRENGTH = 1            # goalie saves: --calibrate barely beats naive (log-loss 0.613 vs 0.616) -> cap at value
+SAVES_MAX_STRENGTH = 1            # goalie saves: Poisson barely beat naive (0.613 vs 0.616); k=20 gets 0.603 — cap stays until the ledger speaks
 MAX_PRICE = 250                   # never stake a prop side longer than +250 or shorter than -250
 MIN_PRICE = -250
 AGREE_MIN_PRICE = -250            # agreement board ("winners, not outliers", the football just-win twin):
 AGREE_MAX_PRICE = -110            #   the side model and market both favour, priced -250..-110,
 AGREE_MAX_GAP_PCT = 20.0          #   model over fair by > 0 and <= +20%, never saves, never thin
 GOOD_PICKS_N = 5
+# ---- simulation (2026-09-29, walk-forward on 2025-26 stored logs; see --calibrate and analysis/06 C/D) ----
+DISPERSION = {"saves": 20.0}      # gamma-Poisson shape per stat; absent = Poisson. Saves log-loss @27.5:
+                                  #   Poisson 0.6131 → k=20 0.6032. Skaters: Poisson already best (≤0.0005 either way)
+DISPERSION_GRID = (None, 50.0, 20.0, 12.0, 8.0, 5.0, 3.0, 2.0)   # what --calibrate searches
+TEAM_RHO = {"points": 0.107, "assists": 0.055}   # latent same-team correlation for the card simulation:
+                                  #   sin(π/2·r), r = teammate indicator corr 0.068 (PTS) / 0.035 (A); opponents ≈ 0
+SIM_N = 20000                     # simulated nights per card
+SIM_SEED = 20260929
 FINDINGS_AS_OF = "2026-09-20"     # no NHL analysis run yet (season opens 2026-10-07) — all priors
 
 
@@ -179,14 +190,36 @@ def poisson_cdf(k: int, lam: float) -> float:
     return min(1.0, total)
 
 
-def p_over(lam: float, line: float) -> tuple[float, float]:
-    """(P(over), P(push)) for a prop line. Half lines never push."""
+def nb_cdf(k: int, lam: float, disp: float) -> float:
+    """P(X <= k) for the gamma-Poisson mixture: λ ~ Gamma(shape=disp, mean=lam), X ~ Poisson(λ).
+    That is what a simulation of 'the rate itself is uncertain' converges to (negative binomial,
+    variance lam + lam²/disp); disp → ∞ is plain Poisson."""
+    if k < 0:
+        return 0.0
+    if lam <= 0:
+        return 1.0
+    q = lam / (disp + lam)
+    term = (1.0 - q) ** disp
+    total = term
+    for i in range(k):
+        term *= (i + disp) / (i + 1) * q
+        total += term
+    return min(1.0, total)
+
+
+def count_cdf(k: int, lam: float, disp: Optional[float] = None) -> float:
+    return poisson_cdf(k, lam) if disp is None else nb_cdf(k, lam, disp)
+
+
+def p_over(lam: float, line: float, disp: Optional[float] = None) -> tuple[float, float]:
+    """(P(over), P(push)) for a prop line. Half lines never push. `disp` = gamma-Poisson shape
+    (DISPERSION per stat); None = Poisson."""
     k = math.floor(line)
     if abs(line - k) < 1e-9:           # whole number: push at exactly k
-        push = poisson_cdf(k, lam) - poisson_cdf(k - 1, lam)
-        over = 1.0 - poisson_cdf(k, lam)
+        push = count_cdf(k, lam, disp) - count_cdf(k - 1, lam, disp)
+        over = 1.0 - count_cdf(k, lam, disp)
         return over, push
-    return 1.0 - poisson_cdf(k, lam), 0.0
+    return 1.0 - count_cdf(k, lam, disp), 0.0
 
 
 def devig2(a: Optional[int], b: Optional[int]) -> tuple[Optional[float], Optional[float]]:
@@ -424,7 +457,7 @@ def project(prop: Prop) -> None:
     g = prop.game
     f = (g.home_factor if prop.player.team == g.home else g.away_factor).get(prop.stat, 1.0)
     prop.mean = r * f
-    po, push = p_over(prop.mean, prop.line)
+    po, push = p_over(prop.mean, prop.line, DISPERSION.get(prop.stat))
     prop.p_over = po / (1.0 - push) if push < 1 else 0.5      # conditional on no push
 
 
@@ -678,6 +711,53 @@ def lock_and_good(props: list[Prop], n: int = GOOD_PICKS_N) -> tuple[Optional[Si
     return lock, good
 
 
+def _team_rho(stat: str) -> float:
+    return TEAM_RHO.get(stat, TEAM_RHO["points"]) if stat != "saves" else 0.0
+
+
+def simulate_card(sigs: list[Signal], source: str = "model", n: int = SIM_N, seed: int = SIM_SEED) -> Optional[dict]:
+    """Monte Carlo of a card of prop tickets played together, `n` nights.
+
+    Each ticket keeps its own chance to cash exactly (the model's truth_p, or the de-vigged fair
+    price when source="market"); what the simulation adds is how they move together. One-factor
+    Gaussian copula: every team-game draws a latent 'offense' Z, and each skater's
+    over-event is latent = √ρ·Z + √(1−ρ)·ε > Φ⁻¹(1 − P(over)). Teammates correlate at √(ρᵢρⱼ)
+    (TEAM_RHO, measured on 2025-26 logs), opponents are independent (measured r ≈ −0.01). An
+    under ticket cashes when its over-event does not. Flat $1 a ticket at its own price."""
+    import numpy as np
+    if not sigs:
+        return None
+    nd = NormalDist()
+    rng = np.random.default_rng(seed)
+    teams = sorted({(s.prop.game.id, s.prop.player.team) for s in sigs})
+    z = {t: rng.standard_normal(n) for t in teams}
+    hits = np.zeros((n, len(sigs)), dtype=bool)
+    pays = []
+    for j, s in enumerate(sigs):
+        p = s.prop
+        if source == "model":
+            p_side = s.truth_p
+        else:
+            fo, fu = devig2(p.over, p.under)
+            p_side = fo if s.side == "over" else fu
+        p_ov = min(max(p_side if s.side == "over" else 1.0 - p_side, 1e-9), 1 - 1e-9)
+        rho = _team_rho(p.stat)
+        lat = math.sqrt(rho) * z[(p.game.id, p.player.team)] + math.sqrt(1 - rho) * rng.standard_normal(n)
+        over = lat > nd.inv_cdf(1.0 - p_ov)
+        hits[:, j] = over if s.side == "over" else ~over
+        pays.append(ce.american_to_decimal(s.price) - 1.0)
+    pays_arr = np.array(pays)
+    profit = (hits * pays_arr).sum(axis=1) - (~hits).sum(axis=1)
+    k = hits.sum(axis=1)
+    parlay_dec = float(np.prod(pays_arr + 1.0))
+    p_all = float(hits.all(axis=1).mean())
+    return {"source": source, "n": n, "tickets": len(sigs), "exp_hits": float(k.mean()),
+            "dist": [float((k == i).mean()) for i in range(len(sigs) + 1)],
+            "p_all": p_all, "exp_profit": float(profit.mean()), "p_profit": float((profit > 0).mean()),
+            "p5": float(np.percentile(profit, 5)), "p50": float(np.percentile(profit, 50)),
+            "p95": float(np.percentile(profit, 95)), "parlay_dec": parlay_dec, "parlay_ev": p_all * parlay_dec - 1.0}
+
+
 def stake_for(sig: Signal, bankroll: float) -> Optional[float]:
     return ce.stake_for(sig, bankroll)
 
@@ -858,6 +938,8 @@ def calibrate(conn: sqlite3.Connection, season: int = PRIOR_SEASON, min_prior: i
         bins = {}
         ll_m = ll_n = 0.0
         n = 0
+        disp = DISPERSION.get(stat)
+        pairs: list[tuple[float, float]] = []
         for pid, vs in by_p.items():
             for i in range(min_prior, len(vs)):
                 hist = vs[:i]
@@ -866,9 +948,10 @@ def calibrate(conn: sqlite3.Connection, season: int = PRIOR_SEASON, min_prior: i
                 rv = hist[-RECENT_GAMES:]
                 if len(rv) >= 5:
                     lam = (1 - RECENT_WEIGHT) * lam + RECENT_WEIGHT * (sum(rv) / len(rv))
-                po, _ = p_over(lam, line)
+                po, _ = p_over(lam, line, disp)
                 pn, _ = p_over(lg, line)
                 y = 1.0 if vs[i] > line else 0.0
+                pairs.append((lam, y))
                 eps = 1e-6
                 ll_m += -(y * math.log(max(po, eps)) + (1 - y) * math.log(max(1 - po, eps)))
                 ll_n += -(y * math.log(max(pn, eps)) + (1 - y) * math.log(max(1 - pn, eps)))
@@ -880,10 +963,22 @@ def calibrate(conn: sqlite3.Connection, season: int = PRIOR_SEASON, min_prior: i
                 n += 1
         if n == 0:
             continue
-        report[stat] = {"n": n, "line": line, "logloss_model": ll_m / n, "logloss_naive": ll_n / n, "bins": bins}
+        grid = {}
+        for k in DISPERSION_GRID:            # does an uncertain rate (gamma-Poisson) beat plain Poisson?
+            ll = 0.0
+            for lam, y in pairs:
+                po, _ = p_over(lam, line, k)
+                ll += -(y * math.log(max(po, 1e-6)) + (1 - y) * math.log(max(1 - po, 1e-6)))
+            grid[k] = ll / n
+        best = min(grid, key=lambda k: (grid[k], k is not None))
+        report[stat] = {"n": n, "line": line, "logloss_model": ll_m / n, "logloss_naive": ll_n / n, "bins": bins,
+                        "dispersion": grid, "best_dispersion": best}
         log(f"\n{stat.upper()} over {line:g} — {n:,} player-games ({season}), walk-forward, no prior season")
         log(f"  log-loss: model {ll_m / n:.4f} · naive league-average {ll_n / n:.4f} → "
             f"{'model better' if ll_m < ll_n else 'NAIVE better'} by {abs(ll_m - ll_n) / n:.4f}")
+        log(f"  dispersion k (gamma-Poisson shape; inf = Poisson; live uses {'inf' if disp is None else f'{disp:g}'}): "
+            + " · ".join(f"{'inf' if k is None else f'{k:g}'} {v:.4f}" for k, v in grid.items())
+            + f" → best {'inf' if best is None else f'{best:g}'}")
         log(f"  {'P(over) bin':<12}{'n':>7}{'pred':>8}{'obs':>8}{'Δpp':>7}")
         for b in sorted(bins):
             c, sp, sy = bins[b]
@@ -926,7 +1021,29 @@ def render_lock(props: list[Prop]) -> str:
     for tag, s in ([("LOCK", lock)] if lock else []) + [(f"good {i}", s) for i, s in enumerate(good, 1)]:
         play, why = _lock_row(s)
         out.append(f"{tag:<7}{s.prop.game.kick_local.strftime('%I:%M%p').lower():<9}{s.prop.game.short:<12}{play:<48} {why}")
-    return "\n".join(out)
+    return "\n".join(out + [""] + sim_lines(([lock] if lock else []) + good))
+
+
+def sim_lines(card: list[Signal], md: bool = False) -> list[str]:
+    """The card simulation twice: if the model is right, and if the market is right."""
+    sims = [x for x in (simulate_card(card, "model"), simulate_card(card, "market")) if x]
+    if not sims:
+        return []
+    n = sims[0]["tickets"]
+    if md:
+        out = [f"| If this is right | Exp. hits of {n} | P(all {n}) | P(≥{n - 1}) | $1 each: exp. | P(up) | 5th–95th pct | "
+               f"{n}-leg parlay +{100 * (sims[0]['parlay_dec'] - 1):.0f}: EV |", "|---|---|---|---|---|---|---|---|"]
+        for x in sims:
+            out.append(f"| {x['source']} | {x['exp_hits']:.2f} | {100 * x['p_all']:.1f}% | {100 * (x['dist'][-1] + x['dist'][-2]):.0f}% | "
+                       f"{x['exp_profit']:+.2f} | {100 * x['p_profit']:.0f}% | {x['p5']:+.2f} to {x['p95']:+.2f} | "
+                       f"{100 * x['parlay_ev']:+.0f}% |")
+        return out
+    out = [f"Simulated {sims[0]['n']:,} nights of these {n} (teammates correlated, flat $1 each):"]
+    for x in sims:
+        out.append(f"  if the {x['source']:<6} is right: {x['exp_hits']:.2f} hits · P(all {n}) {100 * x['p_all']:.1f}% · "
+                   f"exp {x['exp_profit']:+.2f} · P(up) {100 * x['p_profit']:.0f}% · 5–95% {x['p5']:+.2f}..{x['p95']:+.2f} · "
+                   f"{n}-leg parlay EV {100 * x['parlay_ev']:+.0f}%")
+    return out
 
 
 def render_projections(props: list[Prop], n: int = 40) -> str:
@@ -952,7 +1069,7 @@ def write_report(games: list[GameCtx], props: list[Prop], bankroll: float, date:
          f"**Slate:** {len(games)} games · {len(props)} prop lines matched to rostered players ({source})  ",
          f"**Model:** per-game rates from nhl.db game logs (shrink {SHRINK_GAMES:g} games to {PRIOR_SEASON}, "
          f"recent-{RECENT_GAMES} weight {RECENT_WEIGHT:.2f}) × opponent pace/allowance (clamped "
-         f"{OPP_FACTOR_CAP[0]:.2f}–{OPP_FACTOR_CAP[1]:.2f}) → Poisson P(over). Tiers +{EDGE_PCT:g}% / +{EDGE_STRONG_PCT:g}%, "
+         f"{OPP_FACTOR_CAP[0]:.2f}–{OPP_FACTOR_CAP[1]:.2f}) → Poisson P(over) (saves: gamma-Poisson k={DISPERSION['saves']:g}, the rate itself uncertain). Tiers +{EDGE_PCT:g}% / +{EDGE_STRONG_PCT:g}%, "
          f"≥ +{EDGE_OVERREACH_PCT:g}% demoted (⚠overreach). All priors until analysis/06 runs.",
          "", "## The lock, and five good ones", "",
          f"**The lock** is the top of the agreement board: the prop side the projection and the de-vigged "
@@ -967,6 +1084,15 @@ def write_report(games: list[GameCtx], props: list[Prop], bankroll: float, date:
                  f"{'**' + play + '**' if s is lock else play} | {why} |")
     if not lock and not good:
         L.append("| — | — | — | nothing clears either board today | |")
+    card = ([lock] if lock else []) + good
+    if card:
+        L += ["", f"### Simulated {SIM_N:,} nights of that card", "",
+              "Each ticket keeps its own chance to cash; the simulation adds how they move together "
+              f"(teammates share a game-level factor, latent ρ {TEAM_RHO['points']:g} points / "
+              f"{TEAM_RHO['assists']:g} assists, measured on 2025-26 logs; opponents independent). Run twice: "
+              "once trusting the model's probabilities, once trusting the de-vigged market. Flat $1 a ticket; "
+              "the parlay column is all legs in one ticket at the product of the prices.", ""]
+        L += sim_lines(card, md=True)
     L += ["", "## 1. Ranked props", "",
          "| # | Tag | Game | Play | Price | Book | Proj | Model vs fair | $Bet (paper) | Flags |", "|---|---|---|---|---|---|---|---|---|---|"]
     for i, s in enumerate(sigs, 1):

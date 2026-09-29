@@ -4,6 +4,41 @@ All notable changes to `cfb_edge.py` and the analysis loop. Rule changes cite th
 run that justified them; nothing in the constants block changes without one. Weekly report
 releases (`<weekday>-<date>` tags) are not listed here; see the GitHub releases page.
 
+## [2026-09-29 evening] — NHL simulations: gamma-Poisson saves, card Monte Carlo, analysis/06 D
+
+### Added
+- **Rate uncertainty** (`nb_cdf`, `count_cdf`, `p_over(..., disp)`, `DISPERSION`,
+  `DISPERSION_GRID`): a player's rate is Gamma(shape k) around the projection, the count
+  Poisson(λ), which is negative binomial in closed form (a test checks it against 200k simulated draws).
+  `--calibrate` now prints the log-loss for every k. Walk-forward 2025-26: shots best at ∞
+  (Poisson), points flat (0.6096 at ∞ and 50), **saves 0.6131 → 0.6032 at k = 20** (naive
+  0.6162). So `DISPERSION = {"saves": 20}`; skaters unchanged. `SAVES_MAX_STRENGTH` stays 1
+  until the ledger speaks.
+- **`simulate_card`**: 20,000-night Monte Carlo of the lock + five (seed 20260929). Each ticket
+  keeps its own probability; teammates correlate through a one-factor Gaussian copula at
+  `TEAM_RHO` (points 0.107, assists 0.055; opponents independent). Run under the model's
+  probabilities and under the de-vigged market; reports expected hits, P(all), P(≥ n−1),
+  flat-$1 mean / P(up) / 5th–95th, and parlay EV. In the terminal under the lock and in the report
+  as **Simulated 20,000 nights of that card**. Opening night: model 4.45/6 hits, P(up) 51%,
+  +$0.42; market 3.89/6, P(up) 31%, −$0.38.
+- `analysis/06_nhl` (Python + R): C gets the dispersion grid (and the model row uses k = 20 for
+  saves); new **D. same-game correlation**: pooled Pearson r of "had ≥ 1" over 710,554
+  teammate pairs and 752,208 opponent pairs, closed form from per-team sums, latent
+  ρ = sin(πr/2). Points r 0.0684 (ρ 0.1073), assists r 0.0350 (ρ 0.0549), opponents −0.008 /
+  −0.004. Output `nhl_correlation.csv`. **Python == R: max |Δ| 8e-15 (calibration), 3e-16
+  (correlation)**; both run clean on an empty DB.
+- `numpy` added to `requirements.txt` (the card simulation). Tests
+  `test_nb_cdf_matches_simulated_gamma_poisson_and_tends_to_poisson`,
+  `test_simulate_card_keeps_marginals_and_correlates_teammates`; the saves signal test moved
+  to line 24.5 because k = 20 widens the distribution (85 cases).
+- README: a Simulations section with its own diagram, an updated calibration table, and
+  updates to the architecture, flag-flow, analysis and CI diagrams. `analysis/README.md`,
+  `betting_guide.md` and `CLAUDE.md` updated too.
+
+### Why
+- The user asked for simulations. The honest outcome: rate uncertainty only helps saves, and the
+  card simulation shows the lock + five is a coin flip to finish up even if the model is right.
+
 ## [2026-09-29] — NHL opening night: lock + five, DraftKings via ESPN, `agree` bucket
 
 ### Added

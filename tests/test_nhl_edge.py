@@ -87,11 +87,11 @@ def test_prop_signal_thin_and_non_starter_never_staked():
     s = ne.prop_signal(p)
     assert s.strength == 0 and s.note == "⚠thin" and ne.stake_for(s, 100.0) is None
     g = make_player(name="Joseph Woll", pos="G", rates={"saves": 27.5})
-    p = make_prop(market="player_total_saves", line=26.5, over=-110, under=-110, player=g)
+    p = make_prop(market="player_total_saves", line=24.5, over=-110, under=-110, player=g)
     s = ne.prop_signal(p)
     assert s.side == "over" and s.strength == 1 and s.note == "⚠saves-model"   # saves capped at value
     g.starter = False
-    p = make_prop(market="player_total_saves", line=26.5, over=-110, under=-110, player=g)
+    p = make_prop(market="player_total_saves", line=24.5, over=-110, under=-110, player=g)
     s = ne.prop_signal(p)
     assert s.strength == 0 and s.note == "⚠not-starter"
 
@@ -233,3 +233,28 @@ def test_paper_log_keeps_agree_and_prop_buckets_apart(tmp_path):
     n = ne.db_paper_log(conn, [val, ne.agree_signal(p)], 100.0, dt.datetime(2026, 10, 7, tzinfo=UTC))
     assert n == 2
     assert sorted(r[0] for r in conn.execute("SELECT kind FROM paper_bets")) == ["agree", "prop"]
+
+
+# ---------------------------------------------------------------- simulation
+
+def test_nb_cdf_matches_simulated_gamma_poisson_and_tends_to_poisson():
+    import numpy as np
+    rng = np.random.default_rng(1)
+    x = rng.poisson(rng.gamma(20.0, 27.5 / 20.0, 200_000))
+    assert ne.p_over(27.5, 27.5, 20.0)[0] == pytest.approx((x > 27).mean(), abs=0.005)
+    assert ne.nb_cdf(2, 1.3, 1e7) == pytest.approx(ne.poisson_cdf(2, 1.3), abs=1e-5)
+    assert ne.p_over(27.5, 24.5, 20.0)[0] < ne.p_over(27.5, 24.5)[0]     # wider: less sure of the over
+
+
+def test_simulate_card_keeps_marginals_and_correlates_teammates():
+    a = make_prop(market="player_points", line=0.5, over=-200, under=+165)
+    mate = make_player(name="William Nylander", rates={"points": 1.3})
+    mate.id = 8477939
+    b = make_prop(market="player_points", line=0.5, over=-200, under=+165, player=mate)
+    sa, sb = ne.agree_signal(a), ne.agree_signal(b)
+    sim = ne.simulate_card([sa, sb], "model", n=40_000)
+    assert sim["exp_hits"] == pytest.approx(sa.truth_p + sb.truth_p, abs=0.01)
+    assert sim["p_all"] > sa.truth_p * sb.truth_p + 0.005                   # same team: both-cash more often
+    assert sum(sim["dist"]) == pytest.approx(1.0)
+    mkt = ne.simulate_card([sa, sb], "market", n=40_000)
+    assert mkt["exp_profit"] < 0 < sim["exp_profit"]                        # fair odds minus vig lose; the model's edge wins
