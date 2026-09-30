@@ -4,6 +4,15 @@ All notable changes to `cfb_edge.py` and the analysis loop. Rule changes cite th
 run that justified them; nothing in the constants block changes without one. Weekly report
 releases (`<weekday>-<date>` tags) are not listed here; see the GitHub releases page.
 
+## [2026-09-30 night] — Session write-up expanded
+
+- `nhl_rebuild_session_2026-09-30.md` rewritten in far more detail, from the same transcript: how each model call
+  is assembled, token routing, the prompt cache (every write on the 1-hour lifetime, zero misses in 168 calls),
+  parallel tool calls (33 replies, 41 round trips and ~12.3M re-read tokens saved), tool result sizes and waits,
+  background jobs, the effort level (max on every call), thinking bursts, Claude Code's own cost counter, and all
+  nine tool errors with their exact causes. 28 Mermaid charts, all parsing.
+- README Files table describes the expanded write-up.
+
 ## [2026-09-30 evening] — Session write-up; a time in the entry below corrected
 
 - `nhl_rebuild_session_2026-09-30.md`: how the NHL rebuild below was done, written from the
