@@ -5,8 +5,9 @@ PROPRIETARY SOFTWARE LICENSE
 This repository ("the Software") — including cfb_edge.py, cfb_gui.py,
 soccer_edge.py, nhl_edge.py, the analysis/ scripts (Python and R), the tests,
 betting_guide.md, CHANGELOG.md, the README, and every report, diagram,
-projection model, Elo rating method, dispersion (gamma-Poisson) fit,
-same-game correlation estimate, Monte Carlo card simulation, pick board
+projection model (including its fitted constants and walk-forward
+backtests), Elo rating method, dispersion (gamma-Poisson) fit, model-market
+blend, same-game correlation estimate, Monte Carlo card simulation, pick board
 (including the just-win board, the agreement board and the "lock + five"
 card), threshold, and rule set contained here —
 is the copyrighted work of

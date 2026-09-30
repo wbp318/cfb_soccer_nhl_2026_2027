@@ -1502,8 +1502,8 @@ nights; the ESPN fallback costs nothing.
 
 ## License
 
-**Proprietary — all rights reserved.** The code, the projection and rating models, the
-simulations and correlation estimates, the pick boards (just-win, agreement, lock + five), and the
+**Proprietary — all rights reserved.** The code, the projection and rating models (with their
+fitted constants and backtests), the model–market blend, the simulations and correlation estimates, the pick boards (just-win, agreement, lock + five), and the
 play rules for all three sports are viewable here for transparency, but they are not open
 source: no copying, running, deploying, or using the signals to set or advise on lines or
 player props without a written license. Commercial licenses (including
