@@ -4,6 +4,17 @@ All notable changes to `cfb_edge.py` and the analysis loop. Rule changes cite th
 run that justified them; nothing in the constants block changes without one. Weekly report
 releases (`<weekday>-<date>` tags) are not listed here; see the GitHub releases page.
 
+## [2026-09-30 evening] — Session write-up; a time in the entry below corrected
+
+- `nhl_rebuild_session_2026-09-30.md`: how the NHL rebuild below was done, written from the
+  session's Claude Code transcript. It covers the timeline, per-phase token accounting (138 model calls,
+  45.3M tokens processed, 98.9% prompt-cache reads) and every mistake along the way with how it
+  was caught.
+- **Fix:** the entry below said the first 2026-09-30 report and its paper rows were written at
+  16:40. The `props` table stamps that snapshot 16:37:17, so both mentions now say 16:37. The
+  `rules-2026-09-30` release body was re-published from the corrected entry.
+- README Files table lists the write-up.
+
 ## [2026-09-30] — NHL projection rebuilt, lock ranked on a model–market blend, analysis/06 rewritten
 
 ### Why
@@ -75,7 +86,7 @@ releases (`<weekday>-<date>` tags) are not listed here; see the GitHub releases 
   teammate pairs; it was 710,554 survivors-only).
 - `MODEL_VERSION` = "2026-09-30" is stamped on every `props` / `paper_bets` row (`MIGRATIONS`
   add a `model` column; NULL = the 2026-09-20 recipe). The 196 prop rows and 125 paper bets
-  written at 16:40 before the column existed were tagged by a one-off `UPDATE` on the local
+  written at 16:37 before the column existed were tagged by a one-off `UPDATE` on the local
   DB (`taken_at >= 2026-09-30`).
 - `FINDINGS_AS_OF` 2026-09-20 → 2026-09-30.
 
@@ -119,7 +130,7 @@ goalie starts. Log-loss:
   cashed 60.0% (30). That's one night each way, so **the tiers stay priors, unchanged**.
 
 ### Tonight (2026-09-30), the first slate on the new recipe
-- The report was first generated at 16:40 with h fit on 2024-25 (1.042 / 1.133 / 1.127 /
+- The report was first generated at 16:37 with h fit on 2024-25 (1.042 / 1.133 / 1.127 /
   1.136 / 1.168) and `TEAM_RHO` 0.107 / 0.055, then re-issued at 16:52 on the final
   constants. The second version is the one released.
 - The lock is **Quinton Byfield under 0.5 A −245 (DK)**: model 76%, fair 67%, blend 69%, EV

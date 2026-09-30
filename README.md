@@ -1527,5 +1527,6 @@ contact William Brooks Parker via [github.com/wbp318](https://github.com/wbp318)
 | `.gitattributes` | makes every language linguist would hide count on GitHub's language bar (Python, R, Markdown, YAML, TOML, Batchfile, PowerShell, Text, …) and pins LF line endings, CRLF for `.bat`/`.ps1` |
 | `reports/` | `<weekday>-<date>.md` (football), `soccer-<weekday>-<date>.md`, `nhl-<weekday>-<date>.md` — what the tool said before kickoff; each one is also a GitHub release |
 | `CHANGELOG.md` | every rule/constant change and fix, with the analysis run that justified it |
+| `nhl_rebuild_session_2026-09-30.md` | how the 2026-09-30 NHL rebuild was done, from the session transcript: timeline, per‑phase token accounting, mistakes and how each was caught |
 | `snapshot.bat` | Task Scheduler wrapper |
 | `data.db`, `soccer.db`, `nhl.db`, `soccer_leagues.json`, `bets.csv`, `.env` | local only, gitignored |
