@@ -4,6 +4,149 @@ All notable changes to `cfb_edge.py` and the analysis loop. Rule changes cite th
 run that justified them; nothing in the constants block changes without one. Weekly report
 releases (`<weekday>-<date>` tags) are not listed here; see the GitHub releases page.
 
+## [2026-09-30] — NHL projection rebuilt, lock ranked on a model–market blend, analysis/06 rewritten
+
+### Why
+- **Opening night (2026-09-29, old recipe) missed in a pattern, not just on the lock.** The
+  lock (Suzuki over 0.5 PTS −230) lost, and the lock + five went 3 of 6. After `--settle`
+  the 187 paper props were −24.1% flat (`analysis/06` A says "losing", but they came from
+  four games and are not independent, so that interval is too narrow). Value-board overs
+  cashed 33.7% against a model average of 54%, and the +15–30% edge band cashed 27.4%
+  [18, 39] (B1).
+- **Every snapshotted line graded, not just the flagged ones** (282 lines, `06` E): the
+  de-vigged market beat the model, log-loss **0.6476 vs 0.6667**. Mean P(over) was 0.446
+  (model) vs 0.428 (market) vs 0.355 observed, so the model ran high on overs, most on
+  points (0.486 vs 0.456).
+- **Root cause.** The old recipe took last season's per-game mean at face value (no
+  regression to the mean, per game rather than per minute), and it had never been tested with
+  the prior it actually uses: `--calibrate` walked a different recipe (league-average
+  shrink, no prior season).
+
+### Changed — `nhl_edge.py`
+- **Skater projection** (`position_means`, `skater_projection`, `skater_rates`): a per-minute
+  rate × projected minutes.
+  - *Minutes* = (this season's TOI + `TOI_PRIOR_W` 0.09 × last season's + `TOI_GHOST` 0.6
+    ghost games at the position mean) ÷ games at the same weights, then `TOI_RECENT_W` 0.56
+    toward the last `TOI_RECENT_GAMES` 5 once the season has a game.
+  - *Rate per minute* = (this season + a1 × last season + K ghost minutes at the forward or
+    defence rate) ÷ (minutes at the same weights).
+  - λ = rate × minutes × (opponent allowance ÷ league, clamped 0.80–1.20)^β × √h at home,
+    ÷ √h away.
+  - `SKATER_MODEL` (a1, K, β, h):
+
+    | stat | a1 | K | β | h |
+    |---|---|---|---|---|
+    | shots | 0.35 | 86 | 0.84 | 1.037 |
+    | points | 0.58 | 234 | 0.70 | 1.078 |
+    | goals | 0.81 | 694 | 0.64 | 1.077 |
+    | assists | 0.58 | 355 | 0.73 | 1.078 |
+    | PPP | 0.31 | 50 | 0.59 | 1.115 |
+  - a1, K, β and the TOI weights were fit by Nelder–Mead on 2024-25 (prior 2023-24), by
+    full-count likelihood over skaters with ≥ 20 games at ≥ 12 minutes the season before.
+    The fit also said the season before last adds nothing once minutes are modelled (weight
+    ≈ 0). h is not a fit: it is the league home/away ratio pooled over 2024-26 (`06` C0),
+    because the fit season's 1.11 for points fell to 1.045 in 2025-26.
+- `DISPERSION` adds **shots k = 17.5** (full-count fit; Poisson over-called over 1.5 by
+  1.1 pp). Points, goals, assists and PPP stay Poisson. Saves stay k = 20.
+- `opponent_factors`: per-stat exponent β and a symmetric home split (was: the full ratio ×
+  1.02 on home games only). `HOME_FACTOR` is gone.
+- Goalie saves keep the per-start recipe, now in `goalie_rate` so the backtest calls it.
+- **`--build`** adds `HISTORY_SEASON` (2024-25) and `fetch_league_players`. Everyone who
+  played a finished season (stats API `skater|goalie/summary`) is stored with `team` NULL,
+  so position means and the backtest aren't survivors-only. `db_players` skips them.
+  - Finished (player, season) pairs are fetched once; players off every roster lose their
+    team.
+  - **Fix:** the game-log write is now an upsert that keeps `blocked`. `INSERT OR REPLACE`
+    wiped the blocks `--settle` stores, so blocks could never get a rate.
+- **`--calibrate`** rewritten on `backtest()`. It walks 2025-26 forward from 2024-25 with
+  team allowances rebuilt from the logs as of each date, calling the live
+  `skater_projection` / `goalie_rate` / `opponent_factors`. It reports log-loss vs naive at
+  1.5/2.5/3.5 SOG, 0.5/1.5 PTS, 0.5 G/A/PPP and 24.5/27.5 SV, plus bias, the first ten
+  games, reliability bins and the dispersion grid. It runs in about 3 s.
+- **The lock + five** rank on `BLEND_MODEL_W` = 0.25: a logit blend of the model with the
+  de-vigged line, the market carrying 75%.
+  - This is a prior, not a fit: the market has been sharper in every sport, and on opening
+    night by 0.019 log-loss.
+  - Agree signals carry `truth_p` = the blend, with `model_p` and `fair_p` alongside.
+  - Rows show model · fair · blend and the EV at the blend, plus a miss-rate line under the
+    lock.
+  - `simulate_card` gains a third source, `blend`.
+- `TEAM_RHO` 0.107 / 0.055 → **0.1047 / 0.0525** (`06` D over the whole league, 802,876
+  teammate pairs; it was 710,554 survivors-only).
+- `MODEL_VERSION` = "2026-09-30" is stamped on every `props` / `paper_bets` row (`MIGRATIONS`
+  add a `model` column; NULL = the 2026-09-20 recipe). The 196 prop rows and 125 paper bets
+  written at 16:40 before the column existed were tagged by a one-off `UPDATE` on the local
+  DB (`taken_at >= 2026-09-30`).
+- `FINDINGS_AS_OF` 2026-09-20 → 2026-09-30.
+
+### Evidence — `analysis/06` run 2026-09-30
+Python == R: max |Δ| 4.9e-15 over all seven CSVs (217 rows); the printed tables are
+identical apart from bootstrap CIs. `nhl_edge.py --calibrate` matches C at every printed
+digit.
+
+C, out of sample: 2025-26 walked forward from 2024-25, over 36,401 skater-games and 2,090
+goalie starts. Log-loss:
+
+| line | live | old | naive | first 10 games: live vs old |
+|---|---|---|---|---|
+| SOG 1.5 | **0.6130** | 0.6177 | 0.6780 | 0.6108 vs 0.6181 |
+| SOG 2.5 | **0.4817** | 0.4859 | 0.5487 | 0.4599 vs 0.4663 |
+| SOG 3.5 | **0.3094** | 0.3129 | 0.3656 | 0.2908 vs 0.2957 |
+| PTS 0.5 | **0.6092** | 0.6154 | 0.6544 | 0.6006 vs 0.6087 |
+| PTS 1.5 | **0.2970** | 0.3007 | 0.3341 | 0.2799 vs 0.2840 |
+| G 0.5 | **0.4112** | 0.4221 | 0.4298 | 0.3922 vs 0.4128 |
+| A 0.5 | **0.5466** | 0.5544 | 0.5796 | 0.5383 vs 0.5488 |
+| PPP 0.5 | **0.2717** | 0.2778 | 0.3267 | 0.2760 vs 0.2847 |
+| SV 24.5 / 27.5 | **0.6700 / 0.5923** | (same recipe) | 0.6932 / 0.6168 | |
+
+- Every reliability bin with 500+ player-games sits within 2 pp.
+- **Ablation** at the main line:
+  - no regression: goals 0.4153, PPP 0.2760, assists 0.5481, points 0.6098;
+  - no opponent factor: shots 0.4831;
+  - no recent minutes: worse for every stat (points 0.6104);
+  - no home split: ≤ 0.0002 either way.
+- The ablation's K × 0.5 ties the live K for points (0.6091 vs 0.6092); the fitted K stays.
+- h is measured over both seasons, so it isn't out of sample for 2025-26; switching it off
+  moves log-loss by ≤ 0.0002.
+- E (opening night, old recipe): market 0.6476 vs model 0.6667 over 282 lines. The logit
+  blend was best at w = 0 for that recipe.
+- A one-off re-projection of opening night with the new recipe (no 2026-27 data) covered
+  266 skater lines:
+  - log-loss **0.6427 vs the market's 0.6437**;
+  - mean P(over) 0.419 vs 0.424, observed 0.342;
+  - average distance from the market 4.1 pp (was 5.6).
+- Its edge bands that night: 0–8% cashed 46.7% (n 120), 8–15% cashed 46.0% (63), 15–30%
+  cashed 60.0% (30). That's one night each way, so **the tiers stay priors, unchanged**.
+
+### Tonight (2026-09-30), the first slate on the new recipe
+- The report was first generated at 16:40 with h fit on 2024-25 (1.042 / 1.133 / 1.127 /
+  1.136 / 1.168) and `TEAM_RHO` 0.107 / 0.055, then re-issued at 16:52 on the final
+  constants. The second version is the one released.
+- The lock is **Quinton Byfield under 0.5 A −245 (DK)**: model 76%, fair 67%, blend 69%, EV
+  −2.6%.
+- The good five are Rielly u0.5 A, Landeskog u0.5 A, Clarke u0.5 A, Necas u1.5 PTS and
+  Drysdale u0.5 A.
+- The card simulation at the blend: 4.04 of 6, P(up) 36%.
+- No prop side on the slate was +EV at the blend.
+- Both snapshots are in the ledger (`db_paper_log` dedupes by game, player, market and kind).
+
+### Docs and tests
+- **README:**
+  - The NHL section is rewritten. The worked example is tonight's lock with every number
+    from the live code, and the section adds the backtest table, the market check, the
+    simulations refit, the ER diagram with `model`, the NHL week and the honest status.
+  - The top-level and analysis diagrams, the Files table and the Roadmap are updated.
+  - The Odds API cost is corrected from "a 10-game night costs 11" to about **5 credits per
+    game per run** (30 credits for two 3-game runs today).
+- **Other docs:** `analysis/README.md` (layout diagram, loaders, 06 A–E), `betting_guide.md`
+  §6 and `CLAUDE.md` are updated. All 28 Mermaid blocks parse (mermaid 11.17).
+- **`analysis/_shared/load_nhl.{py,R}`** add `load_logs(seasons)` and `load_market_lines()`,
+  and bets carry `model`. `06` adds A `recipe:` rows, C0, the C backtest and ablation, and E.
+  The new outputs are `nhl_backtest.csv`, `nhl_grid.csv` and `nhl_market.csv`.
+- **Tests: 85 → 89.** New tests cover the position means, the recipe by hand, player rates
+  with settled blocks, the upsert keeping blocks, history players never matching, and the
+  blend. The opponent-factor and simulation tests are rewritten.
+
 ## [2026-09-29 late] — License covers the simulations and pick boards
 
 - `LICENSE` and the README license section now name the gamma-Poisson dispersion fit, the

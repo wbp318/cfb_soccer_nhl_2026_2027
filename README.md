@@ -72,9 +72,10 @@ python soccer_edge.py                    # today's soccer board, every league, E
 python soccer_edge.py --top 15 --league eng.1,esp.1,ger.1,ita.1,fra.1
 python soccer_edge.py --snapshot --report    # persist + paper-log + reports/soccer-<weekday>-<date>.md
 
-python nhl_edge.py --build               # once (~2 min): rosters + game logs for 2025-26 and 2026-27 -> nhl.db
-python nhl_edge.py --date 2026-09-29 --projections      # opening night projections, no key needed
-python nhl_edge.py --date 2026-09-29 --snapshot --report   # Odds API key in .env, else DK via ESPN: lines + lock + paper log + report
+python nhl_edge.py --build               # first run ~2 min: rosters + everyone who played 2024-26 + game logs (3 seasons) -> nhl.db
+python nhl_edge.py --calibrate           # the live projection walked forward through 2025-26 (no lines needed)
+python nhl_edge.py --date 2026-09-30 --projections      # tonight's projections, no key needed
+python nhl_edge.py --date 2026-09-30 --snapshot --report   # Odds API key in .env, else DK via ESPN: lines + lock + card sim + paper log + report
 ```
 
 Each `--report` is also published as a GitHub release so the pre‑kickoff board is frozen
@@ -142,7 +143,7 @@ cd cfb_soccer_nhl_2026_2027
 pip install -r requirements.txt            # runtime: just `requests`
 pip install -r analysis/requirements-py.txt -r requirements-dev.txt   # pandas/numpy + ruff/pytest
 python cfb_edge.py --top 10                # first live run — should print next Saturday's outliers
-python -m pytest -q tests                  # 85 passed
+python -m pytest -q tests                  # 89 passed
 ```
 
 No API keys, no `.env`, nothing to sign up for. If the first live run prints a 403, read
@@ -200,11 +201,11 @@ flowchart TB
 
     subgraph NHL["1c · NHL props — nhl_edge.py (NHL public API + The Odds API / DK via ESPN)"]
         direction LR
-        NAPI(("NHL api-web\nrosters · game logs\nboxscores · team summary")) --> PROJ["--build → nhl.db\nplayer_rates × opponent factor\n→ Poisson P(over)\nsaves: gamma-Poisson k=20"]
+        NAPI(("NHL api-web + stats API\nrosters · game logs · league lists\nboxscores · team summary")) --> PROJ["--build → nhl.db (3 seasons, whole league)\nper-minute rate regressed to the position mean\n× projected minutes × opponent^β × home split\n→ P(over): Poisson · shots k=17.5 · saves k=20"]
         OAPI(("The Odds API\nplayer_* markets\nODDS_API_KEY")) --> PROJ
         EDK(("no key: DraftKings\nvia ESPN propBets")) --> PROJ
         PROJ --> SIG3["prop_signal\nmodel vs de-vigged line\n⚠overreach · ⚠thin · ⚠saves-model"]
-        PROJ --> AGR["agree_signal\nboth favour the side · -250..-110\ngap ≤ +20% → the lock + five"]
+        PROJ --> AGR["agree_signal\nboth favour the side · -250..-110\ngap ≤ +20% · ranked on the blend\n(25% model, 75% market) → the lock + five"]
         SIG3 & AGR --> OUT3["projections · --top · lock\nreports/nhl-WEEKDAY-DATE.md\nnhl.db paper ledger"]
     end
 
@@ -220,13 +221,13 @@ flowchart TB
         L --> A3["03 line move\nfollow-the-money"]
         L --> A4["04 deep dive\nhit % + ROI by edge · price · |spread|\ncalibration"]
         LS["_shared/load_soccer\n.py ⇄ .R"] --> A5["05 soccer loop\n3-way ROI · slices · Elo calibration\nHFA × draw-base refit"]
-        LN["_shared/load_nhl\n.py ⇄ .R"] --> A6["06 NHL loop\nROI by kind (prop · agree) · slices\ncalibration + dispersion grid\nD teammate correlation"]
+        LN["_shared/load_nhl\n.py ⇄ .R"] --> A6["06 NHL loop\nROI by kind · recipe · slices\nC backtest: live vs old vs naive\nD teammate correlation · E model vs market"]
         A1 & A2 & A3 & A4 & A5 & A6 --> AGREE{"Python == R?"}
     end
 
     subgraph GUARD["4 · Guard rails (no internet, no real data)"]
         direction LR
-        T["tests/\npytest · 85 cases\nodds math · signals · grading · SQLite"]
+        T["tests/\npytest · 89 cases\nodds math · signals · grading · SQLite"]
         CI["GitHub Actions\npy 3.12 + 3.13 · R 4.4\nlint · tests · empty-DB runs"]
     end
 
@@ -304,8 +305,8 @@ flowchart LR
     LG --> S4
     SDB[("soccer.db")] --> LSB["load_soccer_bets() · load_soccer_matches()\nload_results()"]
     LSB --> S5["05 soccer_loop\nQ-A: does the 3-way ledger make money? (bootstrap CI)\nQ-B: by edge band · price band · pick\nQ-C: is Elo calibrated? log-loss vs the closer\nQ-D: refit ELO_HFA × DRAW_BASE on the results table"]
-    NDB[("nhl.db")] --> LNB["load_nhl_bets() · load_game_logs()"]
-    LNB --> S6["06 nhl_loop\nQ-A: does the prop ledger make money? by kind prop · agree (bootstrap CI)\nQ-B: by edge band · market · side\nQ-C: walk-forward projection calibration\nlog-loss vs league average · reliability bins · dispersion k\nQ-D: same-game correlation → TEAM_RHO"]
+    NDB[("nhl.db")] --> LNB["load_nhl_bets() · load_game_logs()\nload_logs(seasons) · load_market_lines()"]
+    LNB --> S6["06 nhl_loop\nQ-A: does the prop ledger make money? by kind · recipe (bootstrap CI)\nQ-B: by edge band · market · side\nQ-C: is the projection any good? 2025-26 walked forward from 2024-25\nlive vs 2026-09-20 recipe vs naive · bins · dispersion k · ablation\nC0: home/away ratios → h\nQ-D: same-game correlation → TEAM_RHO\nQ-E: model vs market on every settled line · blend curve"]
 
     S1 & S2 & S3 & S4 & S5 & S6 --> OUTC["analysis/_out/*.csv\n(gitignored)"]
     S1 & S2 & S3 & S4 & S5 & S6 --> STD["stdout tables\nsame numbers in .py and .R"]
@@ -604,9 +605,9 @@ flowchart LR
     L3 & L4 --> S5["05 soccer loop\n3-way ROI · slices · Elo calibration\nHFA × draw-base refit"]
     NDB[("nhl.db")] --> L5["_shared/load_nhl.py"]
     NDB --> L6["_shared/load_nhl.R"]
-    L5 & L6 --> S6["06 NHL loop\nprop ROI · slices\ncalibration + dispersion · teammate correlation"]
+    L5 & L6 --> S6["06 NHL loop\nprop ROI by kind · recipe · slices\nprojection backtest (live · old · naive) · ablation\nteammate correlation · model vs market + blend curve"]
     S1 & S2 & S3 & S4 & S5 & S6 --> V{"Py == R ?"}
-    V -- yes --> C["update constants in cfb_edge.py / soccer_edge.py / nhl_edge.py\nSPREAD_OVERREACH_PTS · ML_DEAD_ZONE · LIVE_STAKES\nELO_HFA · DRAW_BASE · SHRINK_GAMES · RECENT_WEIGHT\nbump FINDINGS_AS_OF + CHANGELOG.md entry"]
+    V -- yes --> C["update constants in cfb_edge.py / soccer_edge.py / nhl_edge.py\nSPREAD_OVERREACH_PTS · ML_DEAD_ZONE · LIVE_STAKES\nELO_HFA · DRAW_BASE\nSKATER_MODEL · TOI_* · DISPERSION · TEAM_RHO · BLEND_MODEL_W\nbump FINDINGS_AS_OF + CHANGELOG.md entry"]
     V -- no --> BUG["fix the runtime that's wrong"]
 ```
 
@@ -726,7 +727,7 @@ flowchart LR
     PUSH --> RJ["R job\n(r-lib/actions, R 4.4)"]
     PY --> P1["py_compile\ncfb_edge.py + soccer_edge.py + nhl_edge.py + analysis/*.py"]
     P1 --> P2["ruff check\n(rule set pinned in ruff.toml)"]
-    P2 --> PT["pytest tests/\n85 cases · no network"]
+    P2 --> PT["pytest tests/\n89 cases · no network"]
     PT --> P3["cfb_edge.py --help\n(argparse still parses)"]
     P3 --> P4["--paper-show --db scratch.db\n(SCHEMA + MIGRATIONS bootstrap)"]
     P4 --> P5["run all 6 analysis .py\nagainst empty scratch DBs\nCFB_DB · CFB_SOCCER_DB · CFB_NHL_DB"]
@@ -1127,17 +1128,29 @@ a proof. Paper only; the banner says so on every soccer board because `LIVE_STAK
 
 ## NHL player props (`nhl_edge.py`)
 
-Added 2026‑09‑20 for the 2026‑27 season (opens 2026‑10‑07). Markets: skater **shots on
+Added 2026‑09‑20 for the 2026‑27 season (opened 2026‑09‑29). Markets: skater **shots on
 goal, points, goals, assists, blocked shots, power‑play points** and goalie **saves**. The
-shape is the same as the other two tools with two differences:
+shape is the same as the other two tools with three differences:
 
-1. **The model is a projection, not a rating.** The NHL's public API (keyless) gives every
-   player's game log. `--build` stores last season and this season in `nhl.db`
-   (1,286 rostered players, 46,551 game rows). A player's per‑game rate is his current‑season
-   mean shrunk toward last season (20 games of prior weight), with a 35% tilt toward his last
-   10 games, then multiplied by the opponent's shots‑allowed or goals‑allowed relative to the
-   league (clamped 0.80–1.20) and a 2% home bump. That rate is a Poisson mean; P(over the
-   line) falls out of the CDF, with whole‑number lines handled as pushes.
+1. **The model is a projection, not a rating — rebuilt 2026‑09‑30.** The NHL's public API
+   (keyless) gives every player's game log. `--build` stores three seasons in `nhl.db`: the
+   current one for rostered players, and **everyone who played** in 2024‑25 and 2025‑26
+   (from the stats API's season lists, so nothing is survivors‑only). That's 1,524 players
+   and 100,169 game rows. A skater's projection is a **per‑minute rate × projected minutes**:
+   - *minutes*: this season's TOI, plus last season's at 0.09 weight a game and 0.6 ghost
+     games at the position mean, then 56% toward his last five games once he has one.
+     A new role shows up in minutes before it shows up in points.
+   - *rate*: this season's stat per minute, plus last season's at weight a1, **regressed
+     toward the forward or defence mean by K ghost minutes**. Goals get 694 (shooting
+     luck), assists 355, points 234, shots 86 (shots repeat) and PPP 50.
+   - Multiply by the opponent's shots‑ or goals‑allowed vs the league (clamped 0.80–1.20),
+     raised to β (0.59–0.84). Then multiply by √h at home and divide by √h away, where h
+     is the league's home/away ratio over 2024‑26 (1.037 shots, 1.078 points).
+
+   That λ is a Poisson mean (shots are gamma‑Poisson k = 17.5, saves k = 20), and whole‑number
+   lines are handled as pushes. Goalie saves keep their per‑start recipe. The recipe it
+   replaced took last season's per‑game mean at face value and added a 2% bump to home
+   games only; it priced opening night, and the backtest below says why it had to go.
 2. **The lines.** DraftKings blocks direct API access, so props come from
    [The Odds API](https://the-odds-api.com) (`ODDS_API_KEY` in the environment or in a
    gitignored `.env`; four books, seven markets), or from a CSV you type (`--lines-file`).
@@ -1145,17 +1158,21 @@ shape is the same as the other two tools with two differences:
    blocks, saves) from ESPN's keyless `propBets` feed (Over listed first in each pair).
 3. **The lock, and five good ones.** The football just‑win idea applied to props: the side the
    projection *and* the de‑vigged line both call more likely than not, priced −250..−110,
-   model above fair by no more than +20%, never saves or ⚠thin, ranked by chance to cash.
-   The top one is the lock; the next five come from the rest of that board, then the value
-   board, one per player. Paper‑logged as kind `agree`, its own bucket in `analysis/06`.
-   No track record yet.
+   model above fair by no more than +20%, never saves or ⚠thin. It's ranked by the **blend**:
+   25% model and 75% de‑vigged line, in logit space (`BLEND_MODEL_W`). That weight is a prior,
+   not a fit, because the market has been the sharper side in every sport so far. The top pick
+   is the lock; the next five come from the rest of that board, then the value board, one per
+   player. Each is shown with its EV at the blend, which at −220..−250 is usually negative:
+   these are the likeliest winners, not value bets. Paper‑logged as kind `agree` with
+   `truth_p` = the blend, as its own bucket in `analysis/06`.
 
 ```powershell
-python nhl_edge.py --build                       # once, then weekly: rosters + game logs -> nhl.db
-python nhl_edge.py --calibrate                   # walk-forward test of the projection on 2025-26
-python nhl_edge.py --date 2026-09-29 --projections     # no key needed
-python nhl_edge.py --date 2026-09-29 --snapshot --report   # lines (Odds API, else DK via ESPN), paper log, report
+python nhl_edge.py --build                       # first run ~2 min (three seasons, whole league); later runs fetch this season only
+python nhl_edge.py --calibrate                   # the live recipe walked forward through 2025-26 from 2024-25
+python nhl_edge.py --date 2026-09-30 --projections     # no key needed
+python nhl_edge.py --date 2026-09-30 --snapshot --report   # lines (Odds API, else DK via ESPN), paper log, report
 python nhl_edge.py --settle                      # next morning: grade from boxscores
+python nhl_edge.py --build                       # ...and rebuild, so analysis/06 E can score every line against the result
 ```
 
 ### Inside `nhl_edge.py` — what each flag does
@@ -1164,25 +1181,25 @@ python nhl_edge.py --settle                      # next morning: grade from boxs
 flowchart TD
     START["python nhl_edge.py [flags]"] --> ARGS{"which flag?"}
     ARGS -->|"--paper-show"| PS["open nhl.db\nprint paper_bets by market × side × strength"] --> END
-    ARGS -->|"--build"| B1["standings/now → 32 clubs\nroster/TEAM/20262027 → players"] --> B2["12 threads: player/ID/game-log\nfor 20252026 and 20262027\n→ game_logs (skaters: shots·points·goals·assists·PPP\ngoalies: saves·shots against·started)"] --> END
-    ARGS -->|"--calibrate"| C1["walk forward through 20252026 logs\nλ from games strictly before each game\nP(X > line) at 2.5 SOG · 0.5 PTS · 27.5 SV\nlog-loss vs league-average · reliability bins\ndispersion grid k ∈ ∞,50,20,12,8,5,3,2"] --> END
+    ARGS -->|"--build"| B1["standings/now → 32 clubs\nroster/TEAM/20262027 → players (team set)\nstats API skater + goalie summary 2024-25 · 2025-26\n→ everyone who played (team NULL: history only)"] --> B2["12 threads: player/ID/game-log\nfinished seasons fetched once · this season every time\n→ game_logs upsert (keeps blocks --settle wrote)"] --> END
+    ARGS -->|"--calibrate"| C1["backtest(): walk 2025-26 forward from 2024-25\nthe live functions: skater_projection · goalie_rate · opponent_factors\nteam allowances rebuilt from the logs as of each date\nlog-loss vs naive at 1.5/2.5/3.5 SOG · 0.5/1.5 PTS · 0.5 G · A · PPP · 24.5/27.5 SV\nbias · first ten games · reliability bins · dispersion k"] --> END
     ARGS -->|"--settle"| S1["for every game with a pending paper prop:\ngamecenter/ID/boxscore → actual stat\n(PPP from the game log)\ngrade W/L/P · store blocks into game_logs"] --> END
 
     ARGS -->|"anything else"| F1["schedule/DATE → regular-season games"]
-    F1 --> F2["players from nhl.db (both rosters)\nplayer_rates(as of DATE) per player"]
-    F2 --> F3["team/summary for 20252026 + 20262027\n→ opponent_factors per game\n(shots allowed · goals allowed · shots for, vs league)"]
+    F1 --> F2["players on the two rosters (nhl.db)\nposition_means(2025-26): F · D minutes + per-minute rates\nplayer_rates(as of DATE) → skater_projection"]
+    F2 --> F3["team/summary for 20252026 + 20262027\n→ opponent_factors per game\n(allowance / league)^β · home ×√h · away ÷√h"]
     F3 --> L{"lines?"}
     L -->|"--lines-file x.csv"| L1["read_props_csv"]
     L -->|"ODDS_API_KEY"| L2["Odds API: events → per-event odds\n7 markets · DK/FD/MGM/Caesars"]
     L -->|"neither"| L3["fetch_props_espn: DraftKings via ESPN\nSOG · PTS · A · BLK · SV totals"]
     L1 & L2 & L3 --> M["attach_props: name + team → rostered player\nunmatched or ambiguous rows dropped"]
-    M --> P["project(): λ = rate × opponent factor\nP(over) from Poisson (saves: gamma-Poisson k=20), push-conditioned"]
+    M --> P["project(): λ = rate × minutes × opponent factor\nP(over): Poisson · shots gamma-Poisson k=17.5 · saves k=20\npush-conditioned"]
     P --> SIG["prop_signal: model vs de-vigged over/under\n+8% value · +15% STRONG · ≥ +30% ⚠overreach\n⚠thin · ⚠saves-model · ⚠not-starter"]
-    P --> AG["agree_board → lock_and_good\nboth favour the side · -250..-110 · gap ≤ +20%"]
-    AG --> SIM["simulate_card: 20,000 nights\nteammates correlated (TEAM_RHO)\nmodel vs market"]
+    P --> AG["agree_board → lock_and_good\nboth favour the side · -250..-110 · gap ≤ +20%\nranked on the blend: 25% model · 75% market"]
+    AG --> SIM["simulate_card: 20,000 nights\nteammates correlated (TEAM_RHO)\nif the model · the blend · the market is right"]
     SIG & AG & SIM --> R["render_projections · render_top · render_lock\nall under stakes_banner()"]
     R --> SN{"--snapshot?"}
-    SN -->|yes| DBW["props rows + paper_bets\nkind prop (strength ≥ 1) · kind agree"] --> REP
+    SN -->|yes| DBW["props rows + paper_bets, stamped model = MODEL_VERSION\nkind prop (strength ≥ 1) · kind agree (truth_p = blend)"] --> REP
     SN -->|no| REP{"--report?"}
     REP -->|yes| W["reports/nhl-WEEKDAY-DATE.md"] --> END
     REP -->|no| END((done))
@@ -1195,106 +1212,141 @@ flowchart LR
     subgraph NHL["NHL public API (keyless)"]
         ST["api-web …/v1/standings/now\n32 active clubs"]
         RO["api-web …/v1/roster/TEAM/20262027\nforwards · defensemen · goalies"]
+        LP["api.nhle …/stats/rest/en/skater|goalie/summary\neveryone who played a finished season"]
         GL["api-web …/v1/player/ID/game-log/SEASON/2\nper game: shots · goals · assists · points · PPP · TOI\ngoalies: shotsAgainst · goalsAgainst · gamesStarted"]
         TS["api.nhle …/stats/rest/en/team/summary\nshots for/against per game · goals for/against per game"]
         BX["api-web …/v1/gamecenter/ID/boxscore\nsog · points · blockedShots · goalie saves · starter"]
         SC["api-web …/v1/schedule/DATE\ngameType 2 only"]
     end
     subgraph LINES["prop lines"]
-        OA["The Odds API v4\n/sports/icehockey_nhl/events\n/events/ID/odds?markets=player_…\n(ODDS_API_KEY · ~500 free requests/month)"]
+        OA["The Odds API v4\n/sports/icehockey_nhl/events\n/events/ID/odds?markets=player_…\n(ODDS_API_KEY · ~500 free credits/month\n≈ 5 per game per run)"]
         CSV["--lines-file\nplayer,market,line,over,under[,book[,game]]"]
         EP["ESPN core …/nhl/events/ID/competitions/ID/odds/100/propBets\nDraftKings totals, keyless fallback"]
     end
-    ST --> RO --> GL --> DB[("nhl.db\nplayers · game_logs · build_log")]
-    DB --> RATE["player_rates(as of date)\nshrink 20 → prior season\nrecent-10 weight 0.35"]
-    TS --> OPP["opponent_factors\nclamped 0.80–1.20 · home ×1.02"]
+    ST --> RO --> GL
+    LP --> GL
+    GL --> DB[("nhl.db\nplayers · game_logs · build_log\n3 seasons")]
+    DB --> RATE["position_means (F · D, 2025-26)\nskater_projection(as of date)\nper-minute rate: last season × a1 + K ghost minutes\nminutes: 56% last five games"]
+    TS --> OPP["opponent_factors\n(allowance / league)^β, clamped 0.80–1.20\nhome ×√h · away ÷√h"]
     SC --> GAMES["GameCtx per game"]
     RATE & OPP & GAMES --> PROJ["λ per (player, stat)"]
     OA & CSV & EP --> PROPS["Prop(line, over, under, book)"]
-    PROJ & PROPS --> SIG["prop_signal → paper_bets"]
+    PROJ & PROPS --> SIG["prop_signal · agree_signal → paper_bets"]
     BX --> SET["--settle: actual vs line"]
     SET --> DB
 ```
 
 ### The projection, exactly, with one worked prop
 
-Nathan MacKinnon, Colorado at Winnipeg, opening night 2026‑10‑07. No lines are posted yet;
-suppose DraftKings hangs **over 3.5 shots at −150 / under +120**.
+The lock on 2026‑09‑30: **Quinton Byfield under 0.5 assists**, Los Angeles at Colorado. It's
+his first game of the season, so everything comes from 2025‑26 (79 games, 1,581.9 minutes,
+25 assists) and the forward means (15.14 minutes a game, 0.01977 assists a minute).
+DraftKings hung **over +180 / under −245**.
 
 ```mermaid
 flowchart LR
-    subgraph IN["inputs (from nhl.db and team/summary)"]
-        R["MacKinnon 2025-26: 4.375 SOG per game\n(20 games of prior weight; no 2026-27 games yet)"]
-        O["Winnipeg allows 27.77 shots/game\nleague average 27.83 → factor 0.998 (away, no home bump)"]
-        L["line 3.5 · over −150 · under +120"]
+    subgraph IN["inputs (nhl.db · team/summary · the line)"]
+        R["Byfield 2025-26: 79 GP · 1,581.9 min · 25 A\n(0.316 A/game · 0.0158 A/min)\nforwards: 15.14 min/game · 0.01977 A/min"]
+        O["Colorado allowed 2.40 goals/game\nleague 3.08 · β 0.73 · away ÷√1.078"]
+        L["line 0.5 · over +180 · under −245"]
     end
-    R & O --> LAM["λ = 4.375 × 0.998 = 4.365"]
-    LAM --> P["Poisson: P(X ≥ 4) = 1 − CDF(3) = 63.4%\n(P(X ≥ 3) would be 81.1%)"]
-    L --> FAIR["implied 60.0% / 45.5% = 105.5%\nde-vig: 56.9% over / 43.1% under"]
-    P & FAIR --> E["edge over = (63.4 − 56.9) / 56.9 = +11.4% → prop value\nunder: model 36.6% vs 43.1% → negative"]
-    E --> K["Kelly at −150: b = 0.667\nf = (0.634·0.667 − 0.366)/0.667 = 8.5%\n¼ Kelly = 2.1% of $100 → $2 paper"]
-    K --> PO["LIVE_STAKES = False → paper_bets row"]
+    R --> TOI["minutes = (0.09·1581.9 + 0.6·15.14)\n÷ (0.09·79 + 0.6) = 19.64"]
+    R --> RATE["rate = (0.58·25 + 355·0.01977)\n÷ (0.58·1581.9 + 355) = 0.01691/min\n72% his own data, 28% the forward mean"]
+    TOI & RATE --> NEU["neutral λ = 0.01691 × 19.64 = 0.332"]
+    O --> F["factor = (2.40/3.08)^0.73 ÷ √1.078\n= 0.834 × 0.963 = 0.818"]
+    NEU & F --> LAM["λ = 0.332 × 0.818 = 0.272"]
+    LAM --> P["Poisson: P(0 assists) = e^−0.272 = 76.2%"]
+    L --> FAIR["implied 35.7% + 71.0% = 106.7%\nde-vig: under 66.5%"]
+    P & FAIR --> E["model vs fair +14.5% → agree board\nblend 25/75 in logit space = 69.1%"]
+    E --> K["break-even at −245 is 71.0%\nEV at the blend = 0.691 × 1.408 − 1 = −2.6%"]
+    K --> PO["top of the agree board → the LOCK\npaper only · misses ~3 nights in 10"]
 ```
 
-Once the season starts, the rate blends in 2026‑27 games (10 games in: ⅓ current, ⅔ prior)
-and the last ten games get 35% weight, so a line change or a new linemate shows up within two
-weeks rather than at the All‑Star break.
+His own assist rate is *below* the forward mean, so the regression pulls him up; Colorado's
+defence and the road trip pull him back down. As the season goes on, the two halves move at
+very different speeds. After ten games his projected minutes are about 80% his current
+role. His assist rate per minute is still about 86% last season and the forward mean,
+because a per‑minute rate needs hundreds of minutes before it earns trust, and the backtest
+rewards exactly that patience.
 
-### Does the projection work? (`--calibrate`, walk‑forward on 2025‑26, no prior season)
+### Does the projection work? (`--calibrate` and `analysis/06` C: 2025‑26 walked forward from 2024‑25)
 
-| stat, line | player‑games | log‑loss model | log‑loss naive | verdict |
+Every 2025‑26 game is projected from 2024‑25 plus that season's earlier games, exactly as
+the live model would have run that morning, with opponent allowances as of the date. The
+test set is 36,401 skater‑games (players with ≥ 20 games at ≥ 12 minutes the season before,
+the ones books hang props on) and 2,090 goalie starts. The live recipe's constants were fit on
+2024‑25 (from 2023‑24), so 2025‑26 is out of sample for them. The one exception is h, a measured
+league ratio that pools both seasons; switching it off entirely moves log‑loss by ≤ 0.0002.
+Log‑loss, lower is better:
+
+| stat, line | live (2026‑09‑30) | old (2026‑09‑20) | naive | first 10 games: live vs old |
 |---|---|---|---|---|
-| shots over 2.5 | 36,352 | **0.4742** | 0.5397 | model better by 0.066; every bin within 2 pp except the 0.7–0.8 bin (n=77) |
-| points over 0.5 | 36,352 | **0.6097** | 0.6543 | model better by 0.045; bins within 2 pp everywhere |
-| goalie saves over 27.5 | 1,807 | **0.6131** Poisson · **0.6032** gamma‑Poisson k=20 (live since 2026‑09‑29) | 0.6162 | Poisson barely beat naive; with the rate treated as uncertain it beats naive by 0.013 (see Simulations) |
+| shots over 1.5 | **0.6130** | 0.6177 | 0.6780 | 0.6108 vs 0.6181 |
+| shots over 2.5 | **0.4817** | 0.4859 | 0.5487 | 0.4599 vs 0.4663 |
+| shots over 3.5 | **0.3094** | 0.3129 | 0.3656 | 0.2908 vs 0.2957 |
+| points over 0.5 | **0.6092** | 0.6154 | 0.6544 | 0.6006 vs 0.6087 |
+| points over 1.5 | **0.2970** | 0.3007 | 0.3341 | 0.2799 vs 0.2840 |
+| goals over 0.5 | **0.4112** | 0.4221 | 0.4298 | 0.3922 vs 0.4128 |
+| assists over 0.5 | **0.5466** | 0.5544 | 0.5796 | 0.5383 vs 0.5488 |
+| PP points over 0.5 | **0.2717** | 0.2778 | 0.3267 | 0.2760 vs 0.2847 |
+| goalie saves over 24.5 / 27.5 | **0.6700 / 0.5923** | (unchanged recipe) | 0.6932 / 0.6168 | now tested with a real prior season |
 
-That is the honest reason **goalie saves are capped at "value"** (`SAVES_MAX_STRENGTH = 1`,
-tag ⚠saves‑model): the goalie's own history says little; shots against are the opponent's
-doing, and the walk‑forward test has no opponent factor in it. The live model does, but that
-is untested until the ledger fills. Shots and points are where the projection has earned
-its keep. What this test cannot say is whether any of it beats a **posted line**: no historical
-prop prices exist, so ROI starts at zero on opening night, paper only.
+The new recipe wins every line of every stat, and by the most early in the season, where
+we are now. It's also calibrated: every reliability bin with 500+ player‑games sits within
+2 points of what happened (for example, points over 0.5 predicted 55% happened 57%, and
+predicted 64% happened 65%). The **ablation** (`analysis/06` C, main line) shows which pieces
+earn their keep:
 
-### Simulations (added 2026‑09‑29)
+- **Regression** is what fixes goals (0.4153 without it) and PP points (0.2760 without it).
+- **The opponent factor** matters for shots (0.4831 without it) and hardly at all for the rest.
+- **Recent minutes** help every stat.
+- **The home split** is worth ≤ 0.0002 anywhere, because the home edge in points was 1.11 in 2024‑25 and 1.045 in 2025‑26.
 
-Two pieces, both checked walk‑forward on 2025‑26 and reproduced in `analysis/06` (Python == R
-to 1e‑14):
+**Against the market.** On opening night the old recipe priced 282 lines; the de‑vigged
+market beat it (log‑loss 0.6476 vs 0.6667, `analysis/06` E), running about 3 points high on
+overs. A one‑off re‑projection of that night's 266 skater lines with the new recipe (no
+2026‑27 data used) scored **0.6427 vs the market's 0.6437**, with the over bias gone (mean
+P(over) 0.419 vs the market's 0.424; observed 0.342). One night of four games is a small
+sample. `analysis/06` E scores every snapshotted line by recipe as the games settle, and that
+is where `BLEND_MODEL_W` gets a real fit.
+
+### Simulations (added 2026‑09‑29, refit 2026‑09‑30)
+
+Two pieces, both checked walk‑forward and reproduced in `analysis/06` (Python == R to 5e‑15):
 
 1. **The rate itself is uncertain.** Instead of one fixed λ, a player's rate is drawn from a
    Gamma with shape *k* around the projection, then the count from Poisson(λ) (a gamma‑Poisson,
    i.e. negative binomial; the closed form is what a simulation of it converges to, and a test
-   checks the two agree). `--calibrate` now searches *k* ∈ {∞, 50, 20, 12, 8, 5, 3, 2}:
+   checks the two agree). With the new recipe the fit says:
 
-   | stat, line | Poisson (k = ∞) | best k | verdict |
-   |---|---|---|---|
-   | shots over 2.5 | **0.4740** | ∞ | Poisson already best; every finite k is worse |
-   | points over 0.5 | **0.6096** | 50 (0.6096) | no difference in 4 decimals, stays Poisson |
-   | goalie saves over 27.5 | 0.6131 | **20 (0.6032)** | clearly better; naive is 0.6162 |
-
-   So `DISPERSION = {"saves": 20}` and skaters stay Poisson. Saves now beat naive by 0.013
-   instead of 0.003. `SAVES_MAX_STRENGTH = 1` stays until the ledger says otherwise.
-2. **The card simulation** (`simulate_card`, 20,000 nights, fixed seed). Each ticket keeps its
-   own chance to cash; the simulation adds how tickets move together. A one‑factor Gaussian
-   copula per team‑game uses latent ρ = sin(π r / 2), where *r* is the measured same‑game
-   correlation of "had ≥ 1" (`analysis/06` D, 2025‑26): teammates' points r = 0.068 (ρ 0.107),
-   assists r = 0.035 (ρ 0.055), opponents ≈ −0.01 (treated as independent). It runs twice,
-   trusting the model and then trusting the de‑vigged market, and reports expected hits,
-   P(all), P(one miss or better), flat‑$1 profit (mean, P(up), 5th–95th percentile) and the EV of
-   parlaying the whole card. On opening night the lock + five came out at 4.45 of 6 and 51% to
-   finish up if the model is right, versus 3.89 of 6 and −$0.38 if the market is right. At
-   −200 to −250 you need five of six just to profit.
+   | stat | k | why |
+   |---|---|---|
+   | shots | **17.5** | fit by full‑count likelihood on 2024‑25: Poisson over‑called over 1.5 by 1.1 pp. At 2.5 alone, ∞, 50 and 20 tie at 0.4817 |
+   | points · goals · assists · PPP | ∞ (Poisson) | every finite k is no better at the main line |
+   | goalie saves | **20** | 0.5923 vs Poisson 0.6052 at 27.5; naive 0.6168 |
+2. **The card simulation** (`simulate_card`, 20,000 nights, fixed seed). Each ticket keeps
+   its own chance to cash; the simulation adds how tickets move together. A one‑factor
+   Gaussian copula per team‑game uses latent ρ = sin(π r / 2), where *r* is the measured
+   same‑game correlation of "had ≥ 1" (`analysis/06` D, 2025‑26, whole league, 802,876
+   teammate pairs). Teammates' points have r = 0.0668 (ρ 0.1047) and assists r = 0.0334
+   (ρ 0.0525); opponents are ≈ −0.01 and treated as independent. It runs **three times**,
+   trusting the model, the blend and the de‑vigged market. It reports expected hits,
+   P(all), P(one miss or better), flat‑$1 profit (mean, P(up), 5th–95th percentile) and the
+   EV of parlaying the whole card. On 2026‑09‑30 the lock + five came out at **4.04 of 6 and
+   36% to finish up if the blend is right**, 4.34 and 47% if the model is, and 3.92 and 33%
+   if the market is. At −215 to −250, you need five of six just to profit.
 
 ```mermaid
 flowchart LR
     CARD["lock + five\n(Signal list)"] --> SRC{"whose probabilities?"}
-    SRC -->|"model"| PM["truth_p per ticket"]
+    SRC -->|"model"| PM["model_p per ticket"]
+    SRC -->|"blend"| PB["25% model · 75% market\n(logit space)"]
     SRC -->|"market"| PK["de-vigged fair per ticket"]
-    PM & PK --> COP["per team-game: Z ~ N(0,1)\nticket latent = √ρ·Z + √(1−ρ)·ε\nover if latent > Φ⁻¹(1 − P(over))\nρ = TEAM_RHO (0.107 PTS · 0.055 A)"]
+    PM & PB & PK --> COP["per team-game: Z ~ N(0,1)\nticket latent = √ρ·Z + √(1−ρ)·ε\nover if latent > Φ⁻¹(1 − P(over))\nρ = TEAM_RHO (0.1047 PTS · 0.0525 A)"]
     COP --> SIMN["20,000 nights\nseed 20260929"]
     SIMN --> OUT["exp. hits · P(all) · P(≥ n−1)\nflat $1: mean · P(up) · 5–95%\nparlay EV"]
     OUT --> REP["report: Simulated nights of that card\nterminal: under the lock"]
 ```
-
 
 ### What the NHL database stores
 
@@ -1308,13 +1360,13 @@ erDiagram
     players {
         int id PK "NHL player id"
         text name
-        text team "abbrev on the 2026-27 roster"
+        text team "2026-27 roster abbrev · NULL = history only"
         text position "C L R D G"
     }
     game_logs {
         int game_id PK
         int player_id PK
-        int season "20252026 | 20262027"
+        int season "20242025 · 20252026 · 20262027"
         text date
         text team
         text opp
@@ -1323,7 +1375,7 @@ erDiagram
         int points
         int goals
         int assists
-        int blocked "boxscore only, filled by --settle"
+        int blocked "boxscore only, filled by --settle, kept on rebuild"
         int pp_points
         int saves "goalies"
         int shots_against
@@ -1351,17 +1403,19 @@ erDiagram
         int under
         real mean "λ at snapshot"
         real p_over
+        text model "MODEL_VERSION · NULL = 2026-09-20"
     }
     paper_bets {
         int id PK
         int game_id FK
         int player_id FK
         text logged_at
+        text kind "prop · agree"
         text market
         text side "over | under"
         real line
         int price
-        real truth_p
+        real truth_p "model (prop) · blend (agree)"
         real edge "% over de-vigged fair"
         int strength "2 STRONG PROP · 1 prop value"
         real stake
@@ -1369,6 +1423,7 @@ erDiagram
         real actual "stat from the boxscore"
         text result "W L P"
         real profit
+        text model "MODEL_VERSION · NULL = 2026-09-20"
     }
 ```
 
@@ -1381,41 +1436,55 @@ sequenceDiagram
     participant DB as nhl.db
     participant Book as Odds API / DK via ESPN
     participant An as analysis/06 (py + R)
-    Note over You,An: Monday (and before opening night)
+    Note over You,An: once (and whenever rosters move)
     You->>Tool: --build
-    Tool->>DB: rosters + game logs (both seasons)
+    Tool->>DB: rosters · everyone who played 2024-25 and 2025-26 · game logs (3 seasons)
     Note over You,Book: game day, ~2 h before first puck (starters posted)
     You->>Tool: --snapshot --report
-    Tool->>Book: events + player_* markets (1 request per game · no key → ESPN propBets)
-    Tool->>DB: props rows · paper_bets (kind prop strength ≥ 1 · kind agree)
-    Tool-->>You: PAPER ONLY banner · lock + five · ranked props · reports/nhl-WEEKDAY-DATE.md
+    Tool->>Book: events + player_* markets (≈ 5 credits a game · no key → ESPN propBets)
+    Tool->>DB: props rows · paper_bets (kind prop strength ≥ 1 · kind agree) · model stamped
+    Tool-->>You: PAPER ONLY banner · lock + five (blend, EV) · 3-way card sim · ranked props · report
     You->>DB: gh release create nhl-WEEKDAY-DATE
     Note over You,Book: next morning
-    You->>Tool: --settle
-    Tool->>DB: boxscore actuals → W/L/P · blocks into game_logs
-    Note over You,Book: weekly once the ledger fills — runs today on the game logs
+    You->>Tool: --settle, then --build
+    Tool->>DB: boxscore actuals → W/L/P · blocks · this season's game logs
+    Note over You,Book: weekly
     You->>An: python analysis/06_nhl/nhl_loop.py  and  Rscript …/nhl_loop.R
-    An-->>You: A ROI by kind + prop buckets · B slices · C calibration + dispersion · D teammate correlation — same numbers twice
+    An-->>You: A ROI by kind + recipe · B slices · C backtest (live vs old vs naive) · D correlation · E model vs market + blend curve — same numbers twice
 ```
 
-**Honest status.** `analysis/06_nhl` (Python + R, agree to 1e‑15 on all 27 calibration rows)
-runs on the stored game logs and reproduces the table above; its ROI and slice
-sections fill as opening-night (2026‑09‑29) props settle, with the agreement board
-(`kind:agree`, the lock) graded as its own row. The projection is validated walk‑forward for
-shots and points and weak for saves. Every threshold
-in the NHL block is a prior; the overreach demotion at +30% is borrowed from what football and
-soccer both showed. Paper only.
+**Honest status (2026‑09‑30).** Opening night was priced by the old recipe and it lost:
+187 paper props, flat ROI −24.1%. The lock + five went 3 of 6, and value‑board overs cashed
+33.7% against a model average of 54%. The bootstrap interval for that says "losing", but
+those 187 bets came from four games and are not independent, so the interval is too
+narrow. The part that is evidence is the backtest above: over 36,401 out‑of‑sample
+skater‑games the old recipe was beaten at every line, most of all early in the season, and
+the rebuilt one is calibrated.
+
+Whether *any* NHL bet here beats the vig is untested. No historical prop prices exist, so
+ROI starts from the 2026‑09‑30 ledger. On the first night of the new recipe, none of the
+346 prop sides was +EV at the blend. Every threshold in the NHL block is still a prior (the
++30% overreach demotion is borrowed from football and soccer), and `analysis/06` A, B and
+E are where they get replaced. Paper only.
 
 **Setting the key** (once; optional since 2026‑09‑29, the tool falls back to DraftKings via
-ESPN): create a file named `.env` in the repo folder containing
-`ODDS_API_KEY=yourkey` (the file is gitignored), or set the environment variable. The free
-tier is about 500 requests a month; one game day with ten games costs eleven.
+ESPN): create a file named `.env` in the repo folder containing `ODDS_API_KEY=yourkey` (the
+file is gitignored), or set the environment variable. The free tier is 500 credits a month.
+Each game costs one credit per market returned, about **5 per game per run** (a 3‑game night
+cost 15 on 2026‑09‑30). A 10‑game night is about 50, so the free tier covers roughly ten
+nights; the ESPN fallback costs nothing.
 
 ## Roadmap (only if the numbers earn it)
 
-- **`analysis/06_nhl` against posted lines.** The twins exist and calibrate the projection
-  today; once the ledger has a few hundred props, sections A and B will say whether the +30%
-  overreach prior holds for props and which markets carry the edge.
+- **Fit `BLEND_MODEL_W` and the NHL tiers.** `analysis/06` E scores every snapshotted line
+  against the result, by recipe, with the blend curve. Once the 2026‑09‑30 recipe has a few
+  hundred settled lines, fit the blend weight from E, and let A and B say whether the +30%
+  overreach prior (or soccer's inverted tiers) holds for props.
+- **Goalie saves.** Still the per‑start recipe. Tested against a real prior season now, it
+  beats naive by 0.024. The next step is shots against from both teams' pace × a regressed
+  save %, walked forward the same way.
+- **Blocked shots.** Only boxscores carry them. `--settle` stores them for games with paper
+  bets and a rebuild keeps them; a boxscore backfill would give every skater a blocks rate.
 - **Closing‑line value for soccer and NHL.** `snapshots`/`props` hold the line at log time;
   comparing it to the closer answers "are we early to the right side?" long before the
   win/loss sample can.
@@ -1447,7 +1516,7 @@ contact William Brooks Parker via [github.com/wbp318](https://github.com/wbp318)
 |---|---|
 | `cfb_edge.py` | the football tool — everything lives here, section headers navigate it |
 | `soccer_edge.py` | the soccer tool — every league, self-built Elo vs DK 3-way; imports odds math + banner from `cfb_edge` |
-| `nhl_edge.py` | the NHL prop tool — projections from NHL game logs vs The Odds API / DraftKings-via-ESPN / CSV lines; value board + agreement board (the lock); same imports |
+| `nhl_edge.py` | the NHL prop tool — per‑minute projections (regressed to the position mean, walk‑forward tested) from NHL game logs vs The Odds API / DraftKings-via-ESPN / CSV lines; value board + agreement board (the lock, ranked on a 25/75 model–market blend) + card simulation; same imports |
 | `cfb_gui.py` | optional local browser dashboard over `cfb_edge.py` (stdlib only) |
 | `betting_guide.md` | live‑play reference: thresholds, what to fire on, discipline |
 | `CLAUDE.md` | conventions for Claude Code |

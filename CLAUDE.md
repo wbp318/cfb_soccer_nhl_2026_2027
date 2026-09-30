@@ -10,7 +10,7 @@ Three outlier finders, one philosophy, **all paper only**:
 |---|---|---|---|---|
 | `cfb_edge.py` | college football spreads / moneylines | ESPN FPI predictor | DraftKings via ESPN | `data.db` |
 | `soccer_edge.py` | every soccer league ESPN lists, 3-way ML | self-built Elo from a year of ESPN results | DraftKings via ESPN | `soccer.db` |
-| `nhl_edge.py` | NHL player props (SOG, PTS, G, A, BLK, PPP, goalie SV) | Poisson projections from NHL public game logs | The Odds API (`ODDS_API_KEY`) or a CSV | `nhl.db` |
+| `nhl_edge.py` | NHL player props (SOG, PTS, G, A, BLK, PPP, goalie SV) | per-minute rate (regressed to the position mean) × projected minutes, from NHL public game logs | The Odds API (`ODDS_API_KEY`), DraftKings via ESPN, or a CSV | `nhl.db` |
 
 Each flags where model and market disagree, paper-logs every flagged play, settles it from
 finals, and hands the ledger to `analysis/` (Python + R twins) which is the **only** thing
@@ -37,15 +37,15 @@ python soccer_edge.py --snapshot --report --top 15  # every league; --league eng
 python soccer_edge.py --date 2026-09-20 --settle
 
 # NHL (season opened 2026-09-29)
-python nhl_edge.py --build                          # rosters + game logs both seasons, ~2 min
-python nhl_edge.py --calibrate                      # walk-forward projection test, no lines needed
+python nhl_edge.py --build                          # rosters + everyone who played 2024-26, logs for 3 seasons; ~2 min first, then this season only
+python nhl_edge.py --calibrate                      # the live recipe walked forward through 2025-26 from 2024-25
 python nhl_edge.py --date 2026-09-29 --projections  # no key needed
 python nhl_edge.py --date 2026-09-29 --snapshot --report   # ODDS_API_KEY in .env; no key -> DraftKings via ESPN; or --lines-file x.csv
 python nhl_edge.py --settle
 
 # checks — run all four before every push
 ruff check cfb_edge.py cfb_gui.py soccer_edge.py nhl_edge.py analysis tests
-python -m pytest -q tests                           # 85 cases, no network
+python -m pytest -q tests                           # 89 cases, no network
 python -m pytest -q tests/test_soccer_edge.py -k draw   # one file / one test
 python analysis/05_soccer/soccer_loop.py && "C:/Program Files/R/R-4.4.2/bin/Rscript" analysis/05_soccer/soccer_loop.R
 ```
@@ -79,8 +79,13 @@ informational, never staked. Football also has `just_win_signal` (kind `just-win
 opposite question, favourites FPI and DK agree on at -250..-110, +EV, gap <= +20%; report
 section 0b, own paper bucket, no track record yet. NHL has the twin, `agree_signal` (kind
 `agree`): the prop side projection and de-vigged line both favour at -250..-110, gap 0..+20%,
-no saves, no ⚠thin; `lock_and_good` puts its top on the report as the lock. `analysis/06`
-section A reports `kind:prop` and `kind:agree` separately; market buckets are `prop` only.
+no saves, no ⚠thin, ranked by the logit blend of model and de-vigged line (`BLEND_MODEL_W` =
+0.25 on the model; `truth_p` of an agree signal IS the blend, `model_p`/`fair_p` carry the
+parts); `lock_and_good` puts its top on the report as the lock, with EV at the blend, a
+miss-rate line, and `simulate_card` run three ways (model, blend, market). `analysis/06`
+section A reports `kind:prop`, `kind:agree` and each `recipe:` (`props.model` /
+`paper_bets.model` = `MODEL_VERSION`; NULL = the 2026-09-20 recipe) separately; market
+buckets are `prop` only. Bump `MODEL_VERSION` whenever the projection recipe changes.
 
 **Backfill is honest by construction.** Football: ESPN freezes `current` at the closer and
 the predictor at game morning. Soccer: ratings are never stored; `elo_as_of(date)` replays the
@@ -99,10 +104,12 @@ CIs may differ in the last place. To change a constant: run both runtimes, confi
 agree, edit the constants block, bump `FINDINGS_AS_OF`, update the README status table
 (football "Before you bet", soccer "Honest status", NHL calibration table), add a
 `CHANGELOG.md` entry citing the run, commit, push, cut a `rules-<date>` release. `05` and `06`
-re-implement the Elo replay, the projection recipe, the dispersion grid and the
-teammate correlation on purpose (both runtimes need them);
-if you change `elo_update` or the shrinkage/recent-tilt/Poisson recipe in a tool, change
-the analysis twin too.
+re-implement the Elo replay, the projection recipes (skater `SKATER_MODEL`/`TOI_*`/position
+means/opponent factor, goalie per-start), the dispersion grid, the teammate correlation and the
+market check on purpose (both runtimes need them); if you change `elo_update` or any NHL
+recipe piece in a tool, change both twins too. `nhl_edge.backtest` (behind `--calibrate`)
+calls the live `skater_projection` / `goalie_rate` / `opponent_factors`, so it and `06` C
+cross-check each other: they must agree at every printed digit (they did on 2026-09-30).
 
 ## What the data has said so far (don't re-litigate without a new run)
 
@@ -115,11 +122,20 @@ the analysis twin too.
   - NHL borrows a ≥ +30% overreach demotion as a prior.
 - `LIVE_STAKES = False` for all three. Flip it only when a bucket's 95% CI in the ROI
   script clears zero. Stakes are still computed and paper-logged so the sample grows.
-- NHL `--calibrate` (walk-forward, 2025-26): shots and points beat naive clearly and are
-  calibrated; goalie saves barely beat naive under Poisson (hence `SAVES_MAX_STRENGTH = 1`),
-  and beat it by 0.013 as gamma-Poisson k=20 (`DISPERSION`, 2026-09-29); skaters stay Poisson
-  (every finite k is no better). `simulate_card` (copula, `TEAM_RHO` from `analysis/06` D) runs
-  the lock + five 20,000 times under model and market odds; it needs numpy. No historical
+- NHL projection (2026-09-30, `analysis/06` C): the old recipe (last season's per-game mean
+  at face value) was beaten at every line of every stat by the per-minute recipe regressed
+  to the position mean, fit on 2024-25 and tested on 36,401 2025-26 skater-games (e.g. goals
+  0.4221 → 0.4112, points 0.6154 → 0.6092; most early in the season). Regression is what
+  fixes goals and PPP; the opponent factor matters for shots; home split ≤ 0.0002 (h is the
+  league home/away ratio pooled over 2024-26, because 2024-25 alone was 1.11 and 2025-26 was
+  1.045). Shots are gamma-Poisson k=17.5, saves k=20, the rest Poisson. Saves keep the
+  per-start recipe (beats naive by 0.024 with a real prior; `SAVES_MAX_STRENGTH = 1` stays).
+- NHL vs the market: opening night (old recipe, 282 lines) the de-vigged market won,
+  log-loss 0.6476 vs 0.6667, the model ~3 pp high on overs; the ledger went −24.1% (187
+  bets, 4 games — not independent). Re-projected with the new recipe: 0.6427 vs 0.6437.
+  `BLEND_MODEL_W = 0.25` is a prior until `06` E has a few hundred new-recipe lines. On
+  2026-09-30 no prop side was +EV at the blend; the lock + five are likeliest winners.
+  `TEAM_RHO` (whole league, 802,876 pairs) is 0.1047 points / 0.0525 assists. No historical
   prop prices exist, so NHL ROI is untested until the ledger fills.
 - Football demotions that predate the loop and stay: FCS side (generic FPI rating; the first
   bug put UT Martin +41.5 on top of the board), |spread| ≥ 28, steam against FPI, dogs > +250
@@ -136,7 +152,17 @@ the analysis twin too.
   non-dict entries or a whole day's build fails.
 - **NHL `stats/rest/en/team` lists every defunct franchise**; use `standings/now` for the
   32 clubs. Boxscores have blocked shots but not power-play points (game logs are the
-  reverse); `--settle` fills each from the right source.
+  reverse); `--settle` fills each from the right source, and the build's upsert keeps the
+  blocks (it used to overwrite them with NULL).
+- **`--build` stores everyone who played the finished seasons** (stats API `skater|goalie/summary`),
+  with `team` NULL; `db_players` skips them, so a line can only match a rostered player.
+  Without them the position means and the backtest would be survivors-only. Rebuild after
+  games so `06` E can score the snapshotted lines against the result.
+- **The Odds API costs ~5 credits per game per run** (one per market returned), not one per
+  game: 30 credits for two 3-game runs on 2026-09-30. 500 free a month ≈ ten 10-game nights.
+- **Bash-tool heredocs collapse `\\` to `\`**, so a Python fix-up script with `"\\n"` in it
+  writes a real newline (it broke an f-string and three doc patches on 2026-09-30). Put such
+  scripts in a file with the Write tool and use raw strings, or use `Edit`.
 - **`--settle` needs `--date` of the slate being settled** for football and soccer; the
   default date is the *next* slate.
 - **`settle_bets` matches the ledger side by prefix/substring** (`_side_is_home`) and leaves

@@ -75,26 +75,51 @@ that used to sit here (Syracuse −3.5, Δ 8.1; Middle Tennessee +13.5, Δ 9.3) 
 
 ## 6. NHL props (`nhl_edge.py`) — 2026-27, paper from opening night
 
-- **What is projected:** shots, points, goals, assists, blocks, PP points, goalie saves. Rate
-  = this season shrunk to last season (20 games), 35% tilt to the last 10, × opponent
-  shots/goals allowed vs league (0.80–1.20), × 1.02 at home → Poisson P(over); saves use gamma-Poisson k=20
-  (the rate itself uncertain; beats plain Poisson walk-forward).
-- **Trust order:** shots and points (walk-forward log-loss beats naive by 0.066 / 0.045, bins
-  within 2 pp) → goals / assists / PPP (same machinery, not separately tested) → **saves
-  last** (beats naive by 0.013 with k=20, still capped at value, ⚠saves-model).
+- **What is projected:** shots, points, goals, assists, blocks, PP points, goalie saves.
+  Since 2026-09-30, a skater's projection is a per-minute rate × projected minutes:
+  - The rate is this season plus last season (weighted), regressed toward the forward or
+    defence mean. Goals regress the most (694 ghost minutes) and shots the least (86).
+  - Minutes lean 56% on the last five games.
+  - Then × opponent allowance^β, √h at home and ÷√h away → Poisson P(over). Shots are
+    gamma-Poisson k=17.5 and saves k=20.
+  - Goalie saves keep their per-start recipe.
+- **Trust order:** tested walk-forward on 36,401 skater-games of 2025-26 (from 2024-25, out of
+  sample), the new recipe beats the old one at every line of every stat and is calibrated
+  (bins with 500+ games within 2 pp):
+  - **shots** and **points** first (beat naive by 0.067 / 0.045);
+  - then **assists**, **PPP** and **goals** (0.033 / 0.055 / 0.019; goals are the most luck);
+  - **saves last**: beat naive by 0.024 with a real prior season, still capped at value
+    (⚠saves-model).
+- **The first ten games are where the old recipe was worst** (goals 0.4128 → 0.3922, points
+  0.6087 → 0.6006). Last season's hot streak is not this season's rate, and the market knows
+  it. Opening night (old recipe) priced overs about 3 pp too high; the new recipe does not.
+- **The lock, and five good ones:** the prop side the projection *and* the de-vigged line both
+  favour, −250..−110, model over fair by 0..+20%, never saves or ⚠thin. They're ranked by the
+  **blend** (25% model, 75% market), the best guess at the chance to cash. Paper-logged as kind
+  `agree` (truth_p = the blend).
+  - **Read the EV column.** At −220..−250 it is usually negative at the blend. On 2026-09-30
+    none of 346 prop sides was +EV. These are the likeliest winners, not value bets.
+  - **Read the miss line.** A 69% lock misses about 3 nights in 10: 84% to miss at least once
+    in a five-night week. One miss says nothing about the model.
 - **Read the card simulation before playing the lock + five together:** at −200..−250 you need
-  about five of six just to be up. The report shows it under the model's odds and the market's.
+  about five of six just to be up. The report runs it three ways (model, blend, market). If
+  the blend is right, a typical card finishes up about a third of nights.
 - **Tiers:** +8% value, +15% STRONG, ≥ +30% ⚠overreach never staked (borrowed from what CFB
   and soccer both showed). Price window −250..+250. ⚠thin (< 10 games) never. Goalie flagged
   ⚠not-starter never — check the confirmed starter yourself two hours before puck drop.
-- **Lines:** `.env` with `ODDS_API_KEY=…` (free tier ~500 requests/month; a 10-game night
-  costs 11) or `--lines-file` CSV. With neither, DraftKings' two-sided player totals come from
-  ESPN's keyless `propBets` feed (SOG, points, assists, blocks, saves).
-- **The lock, and five good ones:** the prop side the projection *and* the de-vigged line both
-  favour, −250..−110, model over fair by 0..+20%, never saves or ⚠thin, ranked by chance to
-  cash (the football just-win idea). Paper-logged as kind `agree`. No track record yet.
-- **No historical prop prices exist**, so there is no ROI backtest. The ledger starts empty on
-  2026-09-29 and `analysis/06` gets built when it has a few hundred props.
+  Opening night's +15–30% band cashed 27% under the old recipe; under the new one the same
+  night's band cashed 60% (n=30). One night each, so the tiers stay priors until
+  `analysis/06` B says otherwise.
+- **Lines:** `.env` with `ODDS_API_KEY=…`, or a `--lines-file` CSV.
+  - The Odds API free tier is 500 credits a month at about **5 credits per game per run**
+    (one per market returned), so a 10-game night is ~50 and the free tier covers roughly
+    ten nights.
+  - With neither, DraftKings' two-sided player totals come from ESPN's keyless `propBets`
+    feed (SOG, points, assists, blocks, saves).
+- **No historical prop prices exist**, so there is no ROI backtest against lines. The ledger
+  started 2026-09-29. `analysis/06` A/B grade it by kind and recipe, and E scores every
+  snapshotted line against the result: model vs market, and the blend curve that will fit
+  `BLEND_MODEL_W`.
 
 ## 7. Discipline — the horses lessons carry over
 

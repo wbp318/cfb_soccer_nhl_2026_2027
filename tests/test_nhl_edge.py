@@ -55,13 +55,18 @@ def test_project_uses_rate_times_opponent_factor():
     assert q.mean is None and q.p_over is None            # no rate for that stat
 
 
-def test_opponent_factors_clamped_and_home_bump():
+def test_opponent_factors_damped_clamped_and_home_split():
     prior = {"TOR": {"gp": 82, "sf": 33.0, "sa": 27.0, "gf": 3.5, "ga": 2.6},
-             "MTL": {"gp": 82, "sf": 28.0, "sa": 36.0, "gf": 2.8, "ga": 3.6},
+             "MTL": {"gp": 82, "sf": 28.0, "sa": 40.0, "gf": 2.8, "ga": 3.6},
              "BOS": {"gp": 82, "sf": 30.0, "sa": 30.0, "gf": 3.0, "ga": 3.0}}
     hf, af = ne.opponent_factors(prior, {}, "TOR", "MTL")
-    assert hf["shots"] <= ne.OPP_FACTOR_CAP[1] * ne.HOME_FACTOR and hf["shots"] > 1.0   # MTL allows a lot
-    assert af["shots"] < 1.0                                                          # TOR allows little
+    _, _, beta, h = ne.SKATER_MODEL["shots"]
+    assert hf["shots"] == pytest.approx(ne.OPP_FACTOR_CAP[1] ** beta * h ** 0.5)     # MTL allows 40 vs 32.3: clamped, damped
+    assert af["shots"] == pytest.approx((27.0 / (97.0 / 3)) ** beta / h ** 0.5)      # TOR allows little, and away
+    _, _, beta_p, h_p = ne.SKATER_MODEL["points"]
+    assert af["points"] == pytest.approx((2.6 / 3.0666667) ** beta_p / h_p ** 0.5, rel=1e-6)
+    hn, an = ne.opponent_factors({"X": {"sf": 30, "sa": 30, "ga": 3}, "Y": {"sf": 30, "sa": 30, "ga": 3}}, {}, "X", "Y")
+    assert hn["goals"] * an["goals"] == pytest.approx(1.0) and hn["goals"] > 1.0     # neutral opponents: home ×√h, away ÷√h
     assert hf["saves"] < 1.0 and af["saves"] > 1.0        # goalie facing MTL sees fewer shots
 
 
@@ -143,20 +148,58 @@ def test_load_key_from_env_and_dotenv(tmp_path, monkeypatch):
 
 # ---------------------------------------------------------------- rates + SQLite round trip
 
-def test_player_rates_shrink_toward_prior_and_recent_window(tmp_path):
+def _log(gid, pid, season, date, shots, points, toi, blocked=None):
+    return (gid, pid, season, date, "TOR", "MTL", 1, shots, points, 0, points, blocked, 0, None, None, None, toi)
+
+
+def test_position_means_per_minute_by_group(tmp_path):
     conn = ne.db_connect(str(tmp_path / "n.db"))
-    rows = []
-    for i in range(40):                                      # prior season: 3 shots a game
-        rows.append((100 + i, 1, ne.PRIOR_SEASON, f"2026-01-{i % 28 + 1:02d}", "TOR", "MTL", 1, 3, 1, 0, 1, None, 0, None, None, None, 18.0))
-    for i in range(10):                                      # current season: 5 shots a game
-        rows.append((200 + i, 1, ne.SEASON, f"2026-10-{i + 8:02d}", "TOR", "MTL", 1, 5, 1, 0, 1, None, 0, None, None, None, 18.0))
+    conn.executemany("INSERT INTO players VALUES (?,?,?,?)", [(1, "F One", "TOR", "C"), (2, "D Two", None, "D"),
+                                                              (3, "G Three", "TOR", "G")])
+    conn.executemany("INSERT INTO game_logs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                     [_log(1, 1, ne.PRIOR_SEASON, "2026-01-01", 3, 1, 15.0), _log(2, 1, ne.PRIOR_SEASON, "2026-01-02", 1, 0, 15.0),
+                      _log(1, 2, ne.PRIOR_SEASON, "2026-01-01", 2, 0, 20.0)])
+    pm = ne.position_means(conn)
+    assert pm["F"]["toi"] == pytest.approx(15.0) and pm["F"]["shots"] == pytest.approx(4 / 30)
+    assert pm["D"]["toi"] == pytest.approx(20.0) and pm["D"]["shots"] == pytest.approx(2 / 20)   # team-less history players count
+
+
+def test_skater_rates_recipe_by_hand():
+    pm = {"toi": 15.0, "shots": 0.1, "points": 0.03, "goals": 0.015, "assists": 0.02, "pp_points": 0.008}
+    prior = [(ne.PRIOR_SEASON, 20.0, 3, 1, 0, 1, 0)] * 40                  # 40 games: 3 shots, 1 point in 20 min
+    cur = [(ne.SEASON, 22.0, 5, 1, 1, 0, 0)] * 6                            # 6 games: 5 shots, 1 point in 22 min
+    rates, toi = ne.skater_rates(prior + cur, pm)
+    base = (6 * 22 + ne.TOI_PRIOR_W * 40 * 20 + ne.TOI_GHOST * 15) / (6 + ne.TOI_PRIOR_W * 40 + ne.TOI_GHOST)
+    assert toi == pytest.approx((1 - ne.TOI_RECENT_W) * base + ne.TOI_RECENT_W * 22.0)
+    a1, k, _, _ = ne.SKATER_MODEL["shots"]
+    assert rates["shots"] == pytest.approx((6 * 5 + a1 * 40 * 3 + k * 0.1) / (6 * 22 + a1 * 40 * 20 + k) * toi)
+    a1, k, _, _ = ne.SKATER_MODEL["goals"]
+    assert rates["goals"] == pytest.approx((6 * 1 + 0 + k * 0.015) / (6 * 22 + a1 * 40 * 20 + k) * toi)
+    r0, toi0 = ne.skater_rates(prior, pm)                                   # opening night: last season, regressed
+    assert toi0 == pytest.approx((ne.TOI_PRIOR_W * 800 + ne.TOI_GHOST * 15) / (ne.TOI_PRIOR_W * 40 + ne.TOI_GHOST))
+    assert 0.03 * toi0 < r0["points"] < 1.0                                 # between the position mean and his own 1.0
+    assert ne.skater_rates([], pm) == ({}, None)
+
+
+def test_player_rates_skater_and_blocks_from_settle(tmp_path):
+    conn = ne.db_connect(str(tmp_path / "n.db"))
+    conn.execute("INSERT INTO players VALUES (1, 'F One', 'TOR', 'C')")
+    rows = [_log(100 + i, 1, ne.PRIOR_SEASON, f"2026-01-{i % 28 + 1:02d}", 3, 1, 18.0) for i in range(40)]
+    rows += [_log(200 + i, 1, ne.SEASON, f"2026-10-{i + 8:02d}", 5, 1, 18.0, blocked=2) for i in range(10)]
     conn.executemany("INSERT INTO game_logs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
     rates, eff = ne.player_rates(conn, 1, dt.date(2026, 10, 20), "C")
-    # base = w*5 + (1-w)*3 with w = 10/30 -> 3.667; recent-10 = 5 -> 0.65*3.667 + 0.35*5 = 4.13
-    assert rates["shots"] == pytest.approx(4.133, abs=0.01) and eff == 30
-    before, _ = ne.player_rates(conn, 1, dt.date(2026, 10, 1), "C")
-    assert before["shots"] == pytest.approx(3.0)             # nothing from the current season yet
-    assert "blocked" not in rates                            # game logs carry no blocks
+    assert 3.0 < rates["shots"] < 5.0 and eff == 30 and rates["blocked"] == pytest.approx(2.0)
+    before, eff0 = ne.player_rates(conn, 1, dt.date(2026, 10, 1), "C")
+    assert before["shots"] == pytest.approx(3.0) and eff0 == 20 and "blocked" not in before   # he IS the F mean here
+
+
+def test_build_upsert_keeps_settled_blocks_and_history_players_never_match(tmp_path):
+    conn = ne.db_connect(str(tmp_path / "n.db"))
+    conn.execute("INSERT INTO game_logs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", _log(9, 1, ne.SEASON, "2026-10-08", 2, 0, 17.0, 4))
+    conn.execute(ne.UPSERT_LOG, _log(9, 1, ne.SEASON, "2026-10-08", 3, 1, 18.0, None))     # rebuild: no blocks in game logs
+    assert conn.execute("SELECT shots, blocked FROM game_logs").fetchone() == (3, 4)
+    conn.executemany("INSERT INTO players VALUES (?,?,?,?)", [(1, "On Roster", "TOR", "C"), (2, "Retired Guy", None, "C")])
+    assert [p.name for ps in ne.db_players(conn).values() for p in ps] == ["On Roster"]
 
 
 def test_grade_prop_and_settle_summary(tmp_path):
@@ -253,8 +296,22 @@ def test_simulate_card_keeps_marginals_and_correlates_teammates():
     b = make_prop(market="player_points", line=0.5, over=-200, under=+165, player=mate)
     sa, sb = ne.agree_signal(a), ne.agree_signal(b)
     sim = ne.simulate_card([sa, sb], "model", n=40_000)
-    assert sim["exp_hits"] == pytest.approx(sa.truth_p + sb.truth_p, abs=0.01)
-    assert sim["p_all"] > sa.truth_p * sb.truth_p + 0.005                   # same team: both-cash more often
+    assert sim["exp_hits"] == pytest.approx(sa.model_p + sb.model_p, abs=0.01)
+    assert sim["p_all"] > sa.model_p * sb.model_p + 0.005                   # same team: both-cash more often
     assert sum(sim["dist"]) == pytest.approx(1.0)
     mkt = ne.simulate_card([sa, sb], "market", n=40_000)
     assert mkt["exp_profit"] < 0 < sim["exp_profit"]                        # fair odds minus vig lose; the model's edge wins
+    bl = ne.simulate_card([sa, sb], "blend", n=40_000)
+    assert bl["exp_hits"] == pytest.approx(sa.truth_p + sb.truth_p, abs=0.01)   # agree truth_p IS the blend
+    assert mkt["exp_hits"] < bl["exp_hits"] < sim["exp_hits"]
+
+
+def test_blend_p_logit_weights_and_agree_truth_is_the_blend():
+    assert ne.blend_p(0.8, 0.6, 0.0) == pytest.approx(0.6) and ne.blend_p(0.8, 0.6, 1.0) == pytest.approx(0.8)
+    assert ne.blend_p(0.7, 0.7) == pytest.approx(0.7)
+    mid = ne.blend_p(0.8, 0.6, 0.5)                                          # logit midpoint, not the arithmetic 0.70
+    assert mid == pytest.approx(1 / (1 + ((0.2 / 0.8) * (0.4 / 0.6)) ** 0.5)) and 0.70 < mid < 0.72
+    s = ne.agree_signal(make_prop(market="player_points", line=0.5, over=-200, under=+165))
+    assert s.fair_p < s.truth_p < s.model_p and s.truth_p == pytest.approx(ne.blend_p(s.model_p, s.fair_p))
+    probs = ne.side_probs(s)
+    assert probs == {"model": s.model_p, "blend": pytest.approx(s.truth_p), "market": s.fair_p}

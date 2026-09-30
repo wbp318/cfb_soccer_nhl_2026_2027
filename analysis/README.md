@@ -42,11 +42,14 @@ D ELO_HFA × DRAW_BASE refit"]
     end
     subgraph NH["NHL — nhl.db"]
         LN["_shared/load_nhl.{py,R}
-load_nhl_bets() · load_game_logs()"]
+load_nhl_bets() · load_game_logs()
+load_logs(seasons) · load_market_lines()"]
         LN --> S6["06_nhl
-A ROI by kind (prop · agree) · B slices
-C calibration + dispersion grid
-D same-game correlation"]
+A ROI by kind · recipe · B slices
+C backtest: live vs old vs naive
+bins · dispersion k · ablation · C0 home/away
+D same-game correlation
+E model vs market + blend curve"]
     end
     S1 & S2 & S3 & S4 & S5 & S6 --> OUT["_out/*.csv (gitignored)
 + stdout tables"]
@@ -74,18 +77,36 @@ nhl_edge.py (06)
   flat ROI by edge band, ML price band, |spread|, dog/fav, home/away, and model truth_p vs
   actual. This is the "simulate before you change a rule" script; it produced the 2026-09-20
   demotions (`SPREAD_OVERREACH_PTS`, `ML_DEAD_ZONE`) and `LIVE_STAKES = False`.
-- `_shared/load_nhl.{py,R}` — `load_nhl_bets()` (settled props with pnl_flat) and
-  `load_game_logs(season)` over `nhl.db`. `CFB_NHL_DB` overrides.
-- `06_nhl/` — the NHL loop: A. paper ROI by kind (`prop` value board, `agree` lock board), then value props by
-  market × side × strength (bootstrap CI); B. slices
-  by edge band, market, side; C. walk-forward projection calibration on the stored game logs
-  (shrinkage + recent-10 tilt + Poisson, same recipe as `nhl_edge.calibrate`): log-loss vs the
-  naive league-average model and reliability bins for shots / points / saves, plus the dispersion
-  grid (gamma-Poisson shape k vs Poisson) behind `nhl_edge.DISPERSION`; D. same-game correlation of
-  skater "had ≥ 1" outcomes (teammates, opponents) in closed form → latent ρ = sin(πr/2) behind
-  `nhl_edge.TEAM_RHO`, which the card simulation uses. A and B fill as props settle (season opened
-  2026-09-29); C and D run today and must match `nhl_edge.py --calibrate` / the constants exactly.
-  If you change `DISPERSION`, the grid, or `TEAM_RHO` in the tool, change the twin too.
+- `_shared/load_nhl.{py,R}` — `load_nhl_bets()` (settled props with pnl_flat and the recipe
+  that priced them), `load_game_logs(season)`, `load_logs(seasons)` (several seasons with each
+  player's position, for the backtest) and `load_market_lines()` (every snapshotted line a game
+  log has settled: stored model P(over), multiplicative de-vig, outcome) over `nhl.db`.
+  `CFB_NHL_DB` overrides.
+- `06_nhl/` — the NHL loop.
+  - **A.** Paper ROI by kind (`prop` value board, `agree` lock board) and by recipe
+    (`props.model` / `paper_bets.model`), then value props by market × side × strength
+    (bootstrap CI).
+  - **B.** Slices by edge band, market and side.
+  - **C.** The projection backtest. Every 2025-26 skater-game (36,401 in the test set) and
+    goalie start (2,090) is projected walk-forward from 2024-25 plus that season's earlier
+    games, exactly as `nhl_edge.backtest` / `--calibrate` does it. The live recipe
+    (per-minute rate regressed to the position mean × projected minutes × opponent^β × home
+    split; gamma-Poisson for shots) is scored against the 2026-09-20 recipe and a naive
+    position average, at the lines books hang. It also produces reliability bins, the
+    dispersion grid behind `DISPERSION`, and an ablation at the main line (no regression,
+    K × 0.5 / × 2, no opponent, no home split, no recent minutes). C0 prints the league
+    home/away ratio per season and pooled, which is where `SKATER_MODEL`'s h comes from.
+  - **D.** Same-game correlation of skater "had ≥ 1" outcomes (teammates, opponents), in
+    closed form → latent ρ = sin(πr/2) behind `TEAM_RHO`.
+  - **E.** Model vs market on every snapshotted line a game log has settled: log-loss and
+    bias of the stored projection vs the de-vigged price by recipe and market, plus the
+    logit blend curve that will fit `BLEND_MODEL_W`.
+
+  A, B and E fill as slates settle (after `--settle` and a `--build`). C and D run on the
+  stored logs and must match `nhl_edge.py --calibrate` and the constants exactly. The
+  2026-09-30 run matched the tool at every printed digit, and Python == R to 5e-15 on all
+  seven CSVs. If you change `SKATER_MODEL`, `TOI_*`, `DISPERSION`, the grid, `TEAM_RHO` or
+  the goalie recipe in the tool, change both twins too.
 - `05_soccer/` — the whole loop for `soccer_edge.py` in one script: A. 3-way paper ROI by
   pick × strength with bootstrap CI; B. slices by edge band, price band, pick; C. Elo
   calibration (binned model prob vs observed) and 3-way log-loss vs the de-vigged closer;

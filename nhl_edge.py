@@ -70,6 +70,7 @@ ESPN_PROP_MARKETS = {             # ESPN propBets type name -> Odds API market k
 
 SEASON = 20262027                 # the season we are projecting
 PRIOR_SEASON = 20252026           # the season the prior comes from
+HISTORY_SEASON = 20242025         # the season before that: the prior for the walk-forward test of PRIOR_SEASON
 SEASON_START = dt.date(2026, 9, 29)
 
 # ---- decision constants (NHL props). Every one is a prior until analysis/06 says otherwise. ----
@@ -82,12 +83,29 @@ MARKETS = {                       # Odds API market -> (stat column, who, label)
     "player_power_play_points": ("pp_points", "skater", "PPP"),
     "player_total_saves": ("saves", "goalie", "SV"),
 }
-SHRINK_GAMES = 20.0               # games of prior-season weight a current-season rate has to overcome
+# ---- skater projection (2026-09-30): fit walk-forward on 2024-25 (prior 2023-24), tested on 2025-26 (prior
+#      2024-25) over every skater who played, beat the old recipe at every line of every stat (CHANGELOG) ----
+#   minutes: toi = (Σ toi this season + TOI_PRIOR_W·Σ toi last season + TOI_GHOST·position mean) / (games, same weights),
+#            then TOI_RECENT_W toward the last-5 mean once this season has a game (role changes show up in minutes first)
+#   rate:    per minute = (Σ stat this season + a1·Σ stat last season + K·position rate) / (toi this season + a1·toi last + K)
+#   λ = rate × minutes × (opponent allowance / league)^β × √h at home, ÷ √h away
+TOI_PRIOR_W = 0.09
+TOI_GHOST = 0.6
+TOI_RECENT_W = 0.56
+TOI_RECENT_GAMES = 5
+SKATER_MODEL = {                  # stat -> (a1 last-season weight, K ghost minutes at the position rate, β, h home/away)
+    "shots": (0.35, 86.0, 0.84, 1.037),       # shots repeat: little regression
+    "points": (0.58, 234.0, 0.70, 1.078),
+    "goals": (0.81, 694.0, 0.64, 1.077),      # shooting luck: ~37% regression for a full-time forward
+    "assists": (0.58, 355.0, 0.73, 1.078),
+    "pp_points": (0.31, 50.0, 0.59, 1.115),
+}                                 # a1, K, β fit on 2024-25; h = the league's home/away ratio over 2024-26 (analysis/06 C:
+                                  #   1.11 in 2024-25 but 1.045 in 2025-26 for points, so one season's fit overshoots)
+SHRINK_GAMES = 20.0               # goalies (old recipe, unchanged): games of prior-season weight; also caps ⚠thin credit
 MIN_GAMES = 10                    # fewer total games behind a rate -> ⚠thin, never staked
-RECENT_GAMES = 10                 # rolling window that gets extra weight (form + role changes)
+RECENT_GAMES = 10                 # goalies: rolling window that gets extra weight
 RECENT_WEIGHT = 0.35
-OPP_FACTOR_CAP = (0.80, 1.20)     # opponent pace/allowance multiplier is clamped
-HOME_FACTOR = 1.02                # skaters shoot a touch more at home
+OPP_FACTOR_CAP = (0.80, 1.20)     # opponent allowance / league is clamped before the β exponent
 EDGE_PCT = 8.0                    # model P(side) over de-vigged fair, %: value
 EDGE_STRONG_PCT = 15.0            # STRONG
 EDGE_OVERREACH_PCT = 30.0         # >= this: strength 0. Prior from CFB + soccer: the biggest gaps lose most
@@ -98,15 +116,20 @@ AGREE_MIN_PRICE = -250            # agreement board ("winners, not outliers", th
 AGREE_MAX_PRICE = -110            #   the side model and market both favour, priced -250..-110,
 AGREE_MAX_GAP_PCT = 20.0          #   model over fair by > 0 and <= +20%, never saves, never thin
 GOOD_PICKS_N = 5
+BLEND_MODEL_W = 0.25              # the lock + five rank on a logit blend: 25% model, 75% de-vigged line. A prior, not
+                                  #   a fit: every sport says the closer is sharper, and on opening night (282 lines,
+                                  #   old recipe) the market out-scored the model, log-loss 0.648 vs 0.667
 # ---- simulation (2026-09-29, walk-forward on 2025-26 stored logs; see --calibrate and analysis/06 C/D) ----
-DISPERSION = {"saves": 20.0}      # gamma-Poisson shape per stat; absent = Poisson. Saves log-loss @27.5:
-                                  #   Poisson 0.6131 → k=20 0.6032. Skaters: Poisson already best (≤0.0005 either way)
+DISPERSION = {"saves": 20.0,      # gamma-Poisson shape per stat; absent = Poisson. Saves log-loss @27.5:
+              "shots": 17.5}      #   Poisson 0.6131 → k=20 0.6032. Shots (2026-09-30, fit with the new recipe):
+                                  #   k=17.5 — Poisson over-called over 1.5 by 1.1 pp. PTS/G/A/PPP: Poisson best
 DISPERSION_GRID = (None, 50.0, 20.0, 12.0, 8.0, 5.0, 3.0, 2.0)   # what --calibrate searches
-TEAM_RHO = {"points": 0.107, "assists": 0.055}   # latent same-team correlation for the card simulation:
-                                  #   sin(π/2·r), r = teammate indicator corr 0.068 (PTS) / 0.035 (A); opponents ≈ 0
+TEAM_RHO = {"points": 0.1047, "assists": 0.0525}   # latent same-team correlation for the card simulation:
+                                  #   sin(π/2·r), r = teammate indicator corr 0.0668 (PTS) / 0.0334 (A), whole league; opponents ≈ 0
 SIM_N = 20000                     # simulated nights per card
 SIM_SEED = 20260929
-FINDINGS_AS_OF = "2026-09-20"     # no NHL analysis run yet (season opens 2026-10-07) — all priors
+FINDINGS_AS_OF = "2026-09-30"     # analysis/06 run 2026-09-30: projection backtest (C), opening-night ledger (A/B, E)
+MODEL_VERSION = "2026-09-30"      # stamped on every props / paper_bets row, so analysis/06 E can score recipes apart
 
 
 # =====================================================================
@@ -161,14 +184,16 @@ class Prop:
 @dataclass
 class Signal:
     prop: Prop
-    kind: str                      # "prop"
+    kind: str                      # "prop" (value board: truth_p = model) · "agree" (lock board: truth_p = blend)
     side: str                      # over / under
     label: str
     strength: int
-    edge: float
+    edge: float                    # model over de-vigged fair, %
     truth_p: Optional[float]
     price: Optional[int]
     note: str = ""
+    model_p: Optional[float] = None   # the projection's own P(side), whatever truth_p holds
+    fair_p: Optional[float] = None    # de-vigged market P(side)
 
     @property
     def what(self) -> str:
@@ -224,6 +249,14 @@ def p_over(lam: float, line: float, disp: Optional[float] = None) -> tuple[float
 
 def devig2(a: Optional[int], b: Optional[int]) -> tuple[Optional[float], Optional[float]]:
     return ce.devig_pair(a, b)
+
+
+def blend_p(model: float, fair: float, w: float = BLEND_MODEL_W) -> float:
+    """Logit-space blend of the model's P(side) with the de-vigged line's: w on the model, 1 − w on the market."""
+    def logit(p: float) -> float:
+        p = min(max(p, 1e-6), 1 - 1e-6)
+        return math.log(p / (1 - p))
+    return 1.0 / (1.0 + math.exp(-(w * logit(model) + (1 - w) * logit(fair))))
 
 
 def load_key() -> Optional[str]:
@@ -284,6 +317,19 @@ def fetch_roster(team: str, season: int = SEASON) -> list[Player]:
     return out
 
 
+def fetch_league_players(season: int) -> list[Player]:
+    """Everyone who played a regular-season game in a finished season (skaters and goalies), from the stats
+    API. The build stores their logs too, so the position means and the walk-forward test are not
+    survivors-only (players since retired, released or sent down count)."""
+    out = []
+    for kind in ("skater", "goalie"):
+        d = _get(f"{NHL_STATS}/{kind}/summary", {"limit": -1, "cayenneExp": f"seasonId={season} and gameTypeId=2"})
+        for r in d.get("data", []):
+            out.append(Player(id=int(r["playerId"]), name=r.get("skaterFullName") or r.get("goalieFullName") or "",
+                              team="", position="G" if kind == "goalie" else r.get("positionCode", "?")))
+    return out
+
+
 def fetch_game_log(player_id: int, season: int, game_type: int = 2) -> list[dict]:
     try:
         d = _get(f"{NHL_WEB}/player/{player_id}/game-log/{season}/{game_type}")
@@ -341,6 +387,15 @@ def _log_rows(player: Player, season: int, logs: list[dict]) -> list[tuple]:
     return rows
 
 
+UPSERT_LOG = ("INSERT INTO game_logs(game_id,player_id,season,date,team,opp,home,shots,points,goals,assists,blocked,"
+              "pp_points,saves,shots_against,started,toi) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
+              "ON CONFLICT(game_id, player_id) DO UPDATE SET season=excluded.season, date=excluded.date, "
+              "team=excluded.team, opp=excluded.opp, home=excluded.home, shots=excluded.shots, points=excluded.points, "
+              "goals=excluded.goals, assists=excluded.assists, blocked=COALESCE(excluded.blocked, game_logs.blocked), "
+              "pp_points=excluded.pp_points, saves=excluded.saves, shots_against=excluded.shots_against, "
+              "started=excluded.started, toi=excluded.toi")      # a rebuild keeps the blocks --settle wrote
+
+
 def _toi_min(s: Optional[str]) -> Optional[float]:
     if not s or ":" not in s:
         return None
@@ -348,9 +403,11 @@ def _toi_min(s: Optional[str]) -> Optional[float]:
     return int(m) + int(sec) / 60.0
 
 
-def build_logs(conn: sqlite3.Connection, seasons: tuple[int, ...] = (PRIOR_SEASON, SEASON), workers: int = 12,
-               log=print) -> int:
-    """Rosters for every team this season -> game logs for both seasons -> nhl.db."""
+def build_logs(conn: sqlite3.Connection, seasons: tuple[int, ...] = (HISTORY_SEASON, PRIOR_SEASON, SEASON),
+               workers: int = 12, log=print) -> int:
+    """Rosters for every team this season, plus everyone who played in the finished seasons -> game logs -> nhl.db.
+    Finished (player, season) pairs already stored are not fetched again; the current season always is.
+    Players no longer on a roster keep their logs but lose their team, so a line can never match them."""
     teams = fetch_teams()
     players: list[Player] = []
     for t in teams:
@@ -358,23 +415,32 @@ def build_logs(conn: sqlite3.Connection, seasons: tuple[int, ...] = (PRIOR_SEASO
             players += fetch_roster(t)
         except requests.HTTPError:
             log(f"  roster {t}: not available yet")
+    rostered = {p.id for p in players}
+    if rostered:
+        conn.execute(f"UPDATE players SET team=NULL WHERE id NOT IN ({','.join(map(str, rostered))})")
     for p in players:
         conn.execute("INSERT OR REPLACE INTO players(id,name,team,position) VALUES (?,?,?,?)",
                      (p.id, p.name, p.team, p.position))
+    jobs: dict[tuple[int, int], Player] = {(p.id, s): p for p in players for s in seasons}
+    for s in [s for s in seasons if s != SEASON]:
+        for p in fetch_league_players(s):
+            conn.execute("INSERT OR IGNORE INTO players(id,name,team,position) VALUES (?,?,NULL,?)",
+                         (p.id, p.name, p.position))
+            jobs.setdefault((p.id, s), p)
     conn.commit()
-    log(f"  {len(players)} rostered players on {len(teams)} teams")
+    stored = {(pid, s) for pid, s in conn.execute("SELECT DISTINCT player_id, season FROM game_logs WHERE season != ?",
+                                                  (SEASON,))}
+    todo = [(p, s) for (pid, s), p in jobs.items() if s == SEASON or (pid, s) not in stored]
+    log(f"  {len(players)} rostered players on {len(teams)} teams · {len(todo)} player-seasons to fetch "
+        f"({len(jobs) - len(todo)} finished ones already stored)")
 
-    def one(p: Player):
-        rows = []
-        for s in seasons:
-            rows += _log_rows(p, s, fetch_game_log(p.id, s))
-        return rows
+    def one(job: tuple[Player, int]):
+        p, s = job
+        return _log_rows(p, s, fetch_game_log(p.id, s))
     n = 0
     with ThreadPoolExecutor(workers) as ex:
-        for rows in ex.map(one, players):
-            conn.executemany("INSERT OR REPLACE INTO game_logs(game_id,player_id,season,date,team,opp,home,shots,points,"
-                             "goals,assists,blocked,pp_points,saves,shots_against,started,toi) "
-                             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+        for rows in ex.map(one, todo):
+            conn.executemany(UPSERT_LOG, rows)
             n += len(rows)
     conn.execute("INSERT OR REPLACE INTO build_log(built_at, players, rows) VALUES (?,?,?)",
                  (dt.datetime.now(LOCAL_TZ).isoformat(timespec="minutes"), len(players), n))
@@ -382,36 +448,99 @@ def build_logs(conn: sqlite3.Connection, seasons: tuple[int, ...] = (PRIOR_SEASO
     return n
 
 
-def player_rates(conn: sqlite3.Connection, player_id: int, as_of: dt.date, position: str) -> tuple[dict[str, float], float]:
-    """Shrunk per-game rates as of a date: current season games + recent window vs prior season.
-    Returns (rates, effective games). Blocked shots only exist in boxscores, not game logs:
-    the rate is None until the settle path has stored some."""
-    cols = ["saves", "shots_against", "started"] if position == "G" else ["shots", "points", "goals", "assists", "pp_points", "blocked"]
+def _grp(position: str) -> str:
+    return "D" if position == "D" else "F"
+
+
+def position_means(conn: sqlite3.Connection, season: int = PRIOR_SEASON) -> dict[str, dict[str, float]]:
+    """What a skater's minutes and per-minute rates regress toward: per position group (F / D), the mean
+    TOI per game and Σ stat / Σ minutes over every skater-game of `season` (everyone who played, since
+    --build stores the whole league for finished seasons)."""
+    out: dict[str, dict[str, float]] = {}
+    for grp, cond in (("F", "p.position IN ('C','L','R')"), ("D", "p.position = 'D'")):
+        r = conn.execute("SELECT COUNT(*), SUM(l.toi), SUM(l.shots), SUM(l.points), SUM(l.goals), SUM(l.assists), "
+                         "SUM(l.pp_points) FROM game_logs l JOIN players p ON p.id = l.player_id "
+                         f"WHERE l.season = ? AND l.toi IS NOT NULL AND l.shots IS NOT NULL AND {cond}", (season,)).fetchone()
+        if not r[0] or not r[1]:
+            continue
+        out[grp] = {"toi": r[1] / r[0], **{s: (v or 0) / r[1] for s, v in zip(SKATER_MODEL, r[2:])}}
+    return out
+
+
+def skater_projection(pm: dict[str, float], n_p: int, toi_p: float, sums_p: list[float], n_c: int, toi_c: float,
+                      sums_c: list[float], recent_toi: list[float]) -> tuple[dict[str, float], float]:
+    """The skater recipe on sufficient statistics: games, minutes and stat sums (SKATER_MODEL order) for last
+    season (_p) and this season so far (_c), plus this season's last TOI_RECENT_GAMES minutes. Returns (per-game
+    λ at a neutral rink vs an average opponent, projected minutes). pm = position_means() for the group."""
+    toi = (toi_c + TOI_PRIOR_W * toi_p + TOI_GHOST * pm["toi"]) / (n_c + TOI_PRIOR_W * n_p + TOI_GHOST)
+    if recent_toi:
+        toi = (1 - TOI_RECENT_W) * toi + TOI_RECENT_W * sum(recent_toi) / len(recent_toi)
+    rates = {stat: (sums_c[i] + a1 * sums_p[i] + k * pm[stat]) / (toi_c + a1 * toi_p + k) * toi
+             for i, (stat, (a1, k, _beta, _h)) in enumerate(SKATER_MODEL.items())}
+    return rates, toi
+
+
+def skater_rates(rows: list[tuple], pm: dict[str, float], prior_season: int = PRIOR_SEASON,
+                 season: int = SEASON) -> tuple[dict[str, float], Optional[float]]:
+    """skater_projection on one player's rows (season, toi, shots, points, goals, assists, pp_points), all
+    strictly before the game, in date order."""
+    prior = [r for r in rows if r[0] == prior_season and r[1] is not None]
+    cur = [r for r in rows if r[0] == season and r[1] is not None]
+    if not prior and not cur:
+        return {}, None
+    return skater_projection(pm, len(prior), sum(r[1] for r in prior),
+                             [sum(r[2 + i] or 0 for r in prior) for i in range(len(SKATER_MODEL))],
+                             len(cur), sum(r[1] for r in cur), [sum(r[2 + i] or 0 for r in cur) for i in range(len(SKATER_MODEL))],
+                             [r[1] for r in cur[-TOI_RECENT_GAMES:]])
+
+
+def player_rates(conn: sqlite3.Connection, player_id: int, as_of: dt.date, position: str,
+                 pm: Optional[dict[str, dict[str, float]]] = None) -> tuple[dict[str, float], float]:
+    """Per-game rates as of a date and the games behind them (for ⚠thin). Skaters: skater_rates (the
+    2026-09-30 recipe; pm = position_means(), computed here if not passed). Goalies: saves per START, this
+    season shrunk to last (SHRINK_GAMES) with a recent-10 tilt. Blocked shots only exist in boxscores: the
+    rate is the plain per-game mean of whatever --settle stored, absent until then."""
+    if position != "G":
+        rows = conn.execute("SELECT season, toi, shots, points, goals, assists, pp_points, blocked FROM game_logs "
+                            "WHERE player_id=? AND date<? AND season IN (?,?) ORDER BY date, game_id",
+                            (player_id, as_of.isoformat(), PRIOR_SEASON, SEASON)).fetchall()
+        pm = pm if pm is not None else position_means(conn)
+        rates, _ = skater_rates([r[:7] for r in rows], pm.get(_grp(position)) or next(iter(pm.values()), {})) if pm else ({}, None)
+        blk = [r[7] for r in rows if r[7] is not None]
+        if blk:
+            rates["blocked"] = sum(blk) / len(blk)
+        n_cur = sum(1 for r in rows if r[0] == SEASON)
+        return rates, n_cur + min(len(rows) - n_cur, SHRINK_GAMES)
+    cols = ["saves", "shots_against", "started"]
     rows = conn.execute(f"SELECT season, date, {','.join(cols)} FROM game_logs WHERE player_id=? AND date<? "
                         "ORDER BY date", (player_id, as_of.isoformat())).fetchall()
-    prior = [r for r in rows if r[0] == PRIOR_SEASON]
-    cur = [r for r in rows if r[0] == SEASON]
-    if position == "G":                       # goalies: rate per START
-        prior = [r for r in prior if r[4]]
-        cur = [r for r in cur if r[4]]
+    prior = [r for r in rows if r[0] == PRIOR_SEASON and r[4]]          # goalies: rate per START
+    cur = [r for r in rows if r[0] == SEASON and r[4]]
     rates: dict[str, float] = {}
     for i, c in enumerate(cols):
         if c == "started":
             continue
-        pv = [r[2 + i] for r in prior if r[2 + i] is not None]
-        cv = [r[2 + i] for r in cur if r[2 + i] is not None]
-        rv = cv[-RECENT_GAMES:]
-        if not pv and not cv:
-            continue
-        prior_mean = sum(pv) / len(pv) if pv else (sum(cv) / len(cv))
-        cur_mean = sum(cv) / len(cv) if cv else prior_mean
-        w = len(cv) / (len(cv) + SHRINK_GAMES)
-        base = w * cur_mean + (1 - w) * prior_mean
-        if len(rv) >= 5:
-            base = (1 - RECENT_WEIGHT) * base + RECENT_WEIGHT * (sum(rv) / len(rv))
-        rates[c] = base
+        rate = goalie_rate([r[2 + i] for r in prior if r[2 + i] is not None],
+                           [r[2 + i] for r in cur if r[2 + i] is not None])
+        if rate is not None:
+            rates[c] = rate
     eff = len(cur) + min(len(prior), SHRINK_GAMES)
     return rates, eff
+
+
+def goalie_rate(pv: list[float], cv: list[float]) -> Optional[float]:
+    """Goalie per-start rate (the pre-2026-09-30 recipe, kept for saves): this season's mean shrunk toward last
+    season's by SHRINK_GAMES, then RECENT_WEIGHT toward the last RECENT_GAMES starts once there are five."""
+    if not pv and not cv:
+        return None
+    prior_mean = sum(pv) / len(pv) if pv else sum(cv) / len(cv)
+    cur_mean = sum(cv) / len(cv) if cv else prior_mean
+    w = len(cv) / (len(cv) + SHRINK_GAMES)
+    base = w * cur_mean + (1 - w) * prior_mean
+    rv = cv[-RECENT_GAMES:]
+    if len(rv) >= 5:
+        base = (1 - RECENT_WEIGHT) * base + RECENT_WEIGHT * sum(rv) / len(rv)
+    return base
 
 
 def opponent_factors(summary_prior: dict, summary_cur: dict, home: str, away: str) -> tuple[dict, dict]:
@@ -438,16 +567,16 @@ def opponent_factors(summary_prior: dict, summary_cur: dict, home: str, away: st
     def clamp(x):
         return max(lo, min(hi, x))
 
-    def factors(opp, own, at_home):
+    def factors(opp, at_home):
         sa = blend(opp, "sa") or avg_sa          # opp shots allowed / game
         ga = blend(opp, "ga") or avg_ga          # opp goals allowed / game
         sf_opp = blend(opp, "sf") or avg_sf      # opp shots taken (for goalie saves)
-        hf = HOME_FACTOR if at_home else 1.0
-        shot_f = clamp(sa / avg_sa) * hf
-        scor_f = clamp(ga / avg_ga) * hf
-        return {"shots": shot_f, "goals": scor_f, "assists": scor_f, "points": scor_f, "pp_points": scor_f,
-                "blocked": clamp(sf_opp / avg_sf), "saves": clamp(sf_opp / avg_sf)}
-    return factors(away, home, True), factors(home, away, False)
+        out = {"blocked": clamp(sf_opp / avg_sf), "saves": clamp(sf_opp / avg_sf)}
+        for stat, (_a1, _k, beta, h) in SKATER_MODEL.items():
+            allow = clamp(sa / avg_sa) if stat == "shots" else clamp(ga / avg_ga)
+            out[stat] = allow ** beta * (math.sqrt(h) if at_home else 1.0 / math.sqrt(h))
+        return out
+    return factors(away, True), factors(home, False)
 
 
 def project(prop: Prop) -> None:
@@ -651,7 +780,7 @@ def prop_signal(p: Prop) -> Optional[Signal]:
         if p.player.position == "G" and p.player.starter is False:
             strength, note = 0, "⚠not-starter"
         label = {2: "STRONG PROP", 1: "prop value", 0: ""}[strength]
-        s = Signal(p, "prop", side, label, strength, edge, model, price, note)
+        s = Signal(p, "prop", side, label, strength, edge, model, price, note, model_p=model, fair_p=fair)
         if best is None or s.edge > best.edge:
             best = s
     return best
@@ -666,7 +795,8 @@ def ranked_signals(props: list[Prop]) -> list[Signal]:
 def agree_signal(p: Prop) -> Optional[Signal]:
     """The side both the projection and the de-vigged line call more likely than not, at a holdable
     favourite's price, with the model a little (not a lot) above the market. Kind `agree`, its own
-    paper bucket: the opposite question to prop_signal, same as football's just-win board."""
+    paper bucket: the opposite question to prop_signal, same as football's just-win board. truth_p is
+    the blend (BLEND_MODEL_W), the best guess at the chance to cash; the gap test reads the raw model."""
     if p.p_over is None or p.over is None or p.under is None or p.stat == "saves" or p.player.games < MIN_GAMES:
         return None
     fo, fu = devig2(p.over, p.under)
@@ -677,12 +807,12 @@ def agree_signal(p: Prop) -> Optional[Signal]:
             continue
         edge = (model - fair) / fair * 100.0
         if 0 < edge <= AGREE_MAX_GAP_PCT:
-            return Signal(p, "agree", side, "agree", 1, edge, model, price)
+            return Signal(p, "agree", side, "agree", 1, edge, blend_p(model, fair), price, model_p=model, fair_p=fair)
     return None
 
 
 def agree_board(props: list[Prop]) -> list[Signal]:
-    """Agreement signals, best book per (player, market), most likely to cash first."""
+    """Agreement signals, best book per (player, market), most likely to cash (blend) first."""
     best: dict[tuple, Signal] = {}
     for p in props:
         if p.game.state not in ("FUT", "PRE"):
@@ -715,15 +845,24 @@ def _team_rho(stat: str) -> float:
     return TEAM_RHO.get(stat, TEAM_RHO["points"]) if stat != "saves" else 0.0
 
 
+def side_probs(s: Signal) -> dict[str, float]:
+    """P(this ticket cashes) three ways: the projection, the de-vigged line, and the blend of the two."""
+    fo, fu = devig2(s.prop.over, s.prop.under)
+    fair = s.fair_p if s.fair_p is not None else (fo if s.side == "over" else fu)
+    model = s.model_p if s.model_p is not None else s.truth_p
+    return {"model": model, "blend": blend_p(model, fair), "market": fair}
+
+
 def simulate_card(sigs: list[Signal], source: str = "model", n: int = SIM_N, seed: int = SIM_SEED) -> Optional[dict]:
     """Monte Carlo of a card of prop tickets played together, `n` nights.
 
-    Each ticket keeps its own chance to cash exactly (the model's truth_p, or the de-vigged fair
-    price when source="market"); what the simulation adds is how they move together. One-factor
-    Gaussian copula: every team-game draws a latent 'offense' Z, and each skater's
-    over-event is latent = √ρ·Z + √(1−ρ)·ε > Φ⁻¹(1 − P(over)). Teammates correlate at √(ρᵢρⱼ)
-    (TEAM_RHO, measured on 2025-26 logs), opponents are independent (measured r ≈ −0.01). An
-    under ticket cashes when its over-event does not. Flat $1 a ticket at its own price."""
+    Each ticket keeps its own chance to cash exactly (source = "model": the projection; "market": the
+    de-vigged fair price; "blend": the two in logit space, BLEND_MODEL_W on the model); what the
+    simulation adds is how they move together. One-factor Gaussian copula: every team-game draws a
+    latent 'offense' Z, and each skater's over-event is latent = √ρ·Z + √(1−ρ)·ε > Φ⁻¹(1 − P(over)).
+    Teammates correlate at √(ρᵢρⱼ) (TEAM_RHO, measured on 2025-26 logs), opponents are independent
+    (measured r ≈ −0.01). An under ticket cashes when its over-event does not. Flat $1 a ticket at its
+    own price."""
     import numpy as np
     if not sigs:
         return None
@@ -735,11 +874,7 @@ def simulate_card(sigs: list[Signal], source: str = "model", n: int = SIM_N, see
     pays = []
     for j, s in enumerate(sigs):
         p = s.prop
-        if source == "model":
-            p_side = s.truth_p
-        else:
-            fo, fu = devig2(p.over, p.under)
-            p_side = fo if s.side == "over" else fu
+        p_side = side_probs(s)[source]
         p_ov = min(max(p_side if s.side == "over" else 1.0 - p_side, 1e-9), 1 - 1e-9)
         rho = _team_rho(p.stat)
         lat = math.sqrt(rho) * z[(p.game.id, p.player.team)] + math.sqrt(1 - rho) * rng.standard_normal(n)
@@ -790,7 +925,10 @@ CREATE TABLE IF NOT EXISTS paper_bets (
   book TEXT, actual REAL, result TEXT, profit REAL
 );
 """
-MIGRATIONS: dict[str, list[tuple[str, str]]] = {}
+MIGRATIONS: dict[str, list[tuple[str, str]]] = {
+    "props": [("model", "TEXT")],            # MODEL_VERSION that priced the row; NULL = the 2026-09-20 recipe
+    "paper_bets": [("model", "TEXT")],
+}
 
 
 def db_connect(path: str = NHL_DB) -> sqlite3.Connection:
@@ -807,7 +945,7 @@ def db_connect(path: str = NHL_DB) -> sqlite3.Connection:
 
 def db_players(conn: sqlite3.Connection) -> dict[str, list[Player]]:
     out: dict[str, list[Player]] = {}
-    for pid, name, team, pos in conn.execute("SELECT id,name,team,position FROM players"):
+    for pid, name, team, pos in conn.execute("SELECT id,name,team,position FROM players WHERE team IS NOT NULL"):
         out.setdefault(team, []).append(Player(int(pid), name, team, pos))
     return out
 
@@ -819,9 +957,10 @@ def db_persist(conn: sqlite3.Connection, games: list[GameCtx], props: list[Prop]
                      (g.id, g.date.isoformat(), g.start_utc.isoformat(), g.home, g.away, g.state))
     n = 0
     for p in props:
-        conn.execute("INSERT INTO props(game_id,player_id,taken_at,book,market,line,over,under,mean,p_over) "
-                     "VALUES (?,?,?,?,?,?,?,?,?,?)",
-                     (p.game.id, p.player.id, now.isoformat(), p.book, p.market, p.line, p.over, p.under, p.mean, p.p_over))
+        conn.execute("INSERT INTO props(game_id,player_id,taken_at,book,market,line,over,under,mean,p_over,model) "
+                     "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                     (p.game.id, p.player.id, now.isoformat(), p.book, p.market, p.line, p.over, p.under, p.mean, p.p_over,
+                      MODEL_VERSION))
         n += 1
     conn.commit()
     return n
@@ -837,9 +976,9 @@ def db_paper_log(conn: sqlite3.Connection, sigs: list[Signal], bankroll: float, 
                         (p.game.id, p.player.id, p.market, s.kind)).fetchone():
             continue
         conn.execute("INSERT INTO paper_bets(game_id,player_id,logged_at,kind,market,side,line,price,truth_p,edge,"
-                     "strength,stake,book) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                     "strength,stake,book,model) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                      (p.game.id, p.player.id, now.isoformat(), s.kind, p.market, s.side, p.line, s.price, s.truth_p,
-                      s.edge, s.strength, stake_for(s, bankroll) or 0.0, p.book))
+                      s.edge, s.strength, stake_for(s, bankroll) or 0.0, p.book, MODEL_VERSION))
         n += 1
     conn.commit()
     return n
@@ -914,75 +1053,182 @@ def db_paper_summary(conn: sqlite3.Connection) -> str:
 # ---- calibration ----
 # =====================================================================
 
-def calibrate(conn: sqlite3.Connection, season: int = PRIOR_SEASON, min_prior: int = 10,
-              stats: tuple[str, ...] = ("shots", "points", "saves"), log=print) -> dict:
-    """Walk forward through one season of stored game logs. For each player-game after the
-    player's first `min_prior` games, project λ from games strictly before it (same shrinkage
-    as live, prior season = nothing, so this is the HARDER version of the live model) and
-    score P(X ≥ line) at the median-ish line for that stat. Reports log-loss vs a naive
-    'league-average' model and a reliability table. No prop prices exist for last season,
-    so this validates the projection, not the ROI."""
-    lines = {"shots": 2.5, "points": 0.5, "goals": 0.5, "assists": 0.5, "saves": 27.5, "pp_points": 0.5}
-    report = {}
-    for stat in stats:
-        is_g = stat == "saves"
-        cond = "started=1" if is_g else "toi IS NOT NULL"
-        rows = conn.execute(f"SELECT player_id, date, {stat} FROM game_logs WHERE season=? AND {stat} IS NOT NULL "
-                            f"AND {cond} ORDER BY player_id, date", (season,)).fetchall()
-        by_p: dict[int, list] = {}
-        for pid, d, v in rows:
-            by_p.setdefault(pid, []).append(v)
-        allv = [v for vs in by_p.values() for v in vs]
-        lg = sum(allv) / len(allv) if allv else 0.0
-        line = lines[stat]
-        bins = {}
-        ll_m = ll_n = 0.0
-        n = 0
-        disp = DISPERSION.get(stat)
-        pairs: list[tuple[float, float]] = []
-        for pid, vs in by_p.items():
-            for i in range(min_prior, len(vs)):
-                hist = vs[:i]
-                w = len(hist) / (len(hist) + SHRINK_GAMES)
-                lam = w * (sum(hist) / len(hist)) + (1 - w) * lg
-                rv = hist[-RECENT_GAMES:]
-                if len(rv) >= 5:
-                    lam = (1 - RECENT_WEIGHT) * lam + RECENT_WEIGHT * (sum(rv) / len(rv))
-                po, _ = p_over(lam, line, disp)
-                pn, _ = p_over(lg, line)
-                y = 1.0 if vs[i] > line else 0.0
-                pairs.append((lam, y))
-                eps = 1e-6
-                ll_m += -(y * math.log(max(po, eps)) + (1 - y) * math.log(max(1 - po, eps)))
-                ll_n += -(y * math.log(max(pn, eps)) + (1 - y) * math.log(max(1 - pn, eps)))
-                b = min(9, int(po * 10))
-                acc = bins.setdefault(b, [0, 0.0, 0.0])
-                acc[0] += 1
-                acc[1] += po
-                acc[2] += y
-                n += 1
-        if n == 0:
+CAL_LINES = {"shots": (1.5, 2.5, 3.5), "points": (0.5, 1.5), "goals": (0.5,), "assists": (0.5,), "pp_points": (0.5,),
+             "saves": (24.5, 27.5)}   # the lines books hang; the first is the one binned and dispersion-searched...
+CAL_MAIN = {"shots": 2.5, "points": 0.5, "goals": 0.5, "assists": 0.5, "pp_points": 0.5, "saves": 27.5}
+CAL_MIN_GAMES = 20                # the test set: skaters with ≥ 20 games at ≥ CAL_MIN_TOI a game the season before (who
+CAL_MIN_TOI = 12.0                #   books hang props on); goalies with ≥ 20 starts the season before, their starts only
+CAL_EARLY = 10                    # "early": the first 10 games of the season, where the prior does most of the work
+
+
+def _ll(p: float, y: float) -> float:
+    p = min(max(p, 1e-6), 1 - 1e-6)
+    return -(y * math.log(p) + (1 - y) * math.log(1 - p))
+
+
+def backtest(conn: sqlite3.Connection, season: int = PRIOR_SEASON, prior: int = HISTORY_SEASON) -> list[tuple]:
+    """(stat, λ, actual, games into the season, naive λ) for every test-set player-game of `season`, projected
+    exactly as the live model would have that morning: last season = `prior`, this season's earlier games,
+    the opponent's allowance as of that date (opponent_factors on team summaries built from the logs), home or
+    away. Calls the live skater_projection / goalie_rate / opponent_factors, so it tests the code that picks."""
+    pos = dict(conn.execute("SELECT id, position FROM players"))
+    rows = conn.execute("SELECT game_id, player_id, season, date, team, opp, home, toi, shots, points, goals, assists, "
+                        "pp_points, saves, started FROM game_logs WHERE season IN (?, ?) "
+                        "ORDER BY date, game_id, player_id", (prior, season)).fetchall()
+    pm = position_means(conn, prior)
+    if not pm or not any(r[2] == season for r in rows):
+        return []
+    stat_ix = range(8, 8 + len(SKATER_MODEL))          # shots..pp_points columns, SKATER_MODEL order
+    by_game: dict[tuple, dict] = {}             # (season, game) -> {team: [shots for, goals for]}
+    game_date: dict[tuple, str] = {}
+    for r in rows:
+        if pos.get(r[1]) in ("C", "L", "R", "D") and r[7] is not None and r[8] is not None:
+            t = by_game.setdefault((r[2], r[0]), {}).setdefault(r[4], [0, 0])
+            t[0] += r[8]
+            t[1] += r[10]
+            game_date[(r[2], r[0])] = r[3]
+    team_rows: dict[tuple, list] = {}           # (season, team) -> [(date, shots for, shots against, goals against)]
+    for key, teams in by_game.items():
+        if len(teams) != 2:
             continue
-        grid = {}
-        for k in DISPERSION_GRID:            # does an uncertain rate (gamma-Poisson) beat plain Poisson?
-            ll = 0.0
-            for lam, y in pairs:
-                po, _ = p_over(lam, line, k)
-                ll += -(y * math.log(max(po, 1e-6)) + (1 - y) * math.log(max(1 - po, 1e-6)))
-            grid[k] = ll / n
+        (ta, (sfa, gfa)), (tb, (sfb, gfb)) = sorted(teams.items())
+        team_rows.setdefault((key[0], ta), []).append((game_date[key], sfa, sfb, gfb))
+        team_rows.setdefault((key[0], tb), []).append((game_date[key], sfb, sfa, gfa))
+
+    def summarize(games: list) -> dict:
+        n = len(games)
+        return {"gp": n, "sf": sum(g[1] for g in games) / n, "sa": sum(g[2] for g in games) / n,
+                "ga": sum(g[3] for g in games) / n}
+    summary_prior = {t: summarize(g) for (s, t), g in team_rows.items() if s == prior and g}
+    team_cur = {t: sorted(g) for (s, t), g in team_rows.items() if s == season}
+
+    agg_p: dict[int, list] = {}                 # skater: [games, minutes, stat sums...] last season
+    starts_p: dict[int, list] = {}              # goalie: saves in last season's starts
+    for r in rows:
+        if r[2] != prior:
+            continue
+        if pos.get(r[1]) == "G":
+            if r[14] and r[13] is not None:
+                starts_p.setdefault(r[1], []).append(r[13])
+        elif r[7] is not None and r[8] is not None:
+            a = agg_p.setdefault(r[1], [0, 0.0] + [0.0] * len(SKATER_MODEL))
+            a[0] += 1
+            a[1] += r[7]
+            for j, i in enumerate(stat_ix):
+                a[2 + j] += r[i] or 0
+    naive = {g: {s: m[s] * m["toi"] for s in SKATER_MODEL} for g, m in pm.items()}
+    all_sv = [v for vs in starts_p.values() for v in vs]
+    naive_sv = sum(all_sv) / len(all_sv) if all_sv else 27.0
+
+    out: list[tuple] = []
+    agg_c: dict[int, list] = {}
+    recent: dict[int, list] = {}
+    starts_c: dict[int, list] = {}
+    cur_rows = [r for r in rows if r[2] == season]
+    dates = sorted({r[3] for r in cur_rows})
+    by_date: dict[str, list] = {}
+    for r in cur_rows:
+        by_date.setdefault(r[3], []).append(r)
+    for d in dates:
+        summary_cur = {}
+        for t, games in team_cur.items():
+            before = [g for g in games if g[0] < d]
+            if before:
+                summary_cur[t] = summarize(before)
+        matchup = {r[0]: ((r[4], r[5]) if r[6] else (r[5], r[4])) for r in by_date[d]}      # game -> (home, away)
+        facs = {gid: opponent_factors(summary_prior, summary_cur, h, a) for gid, (h, a) in matchup.items()}
+        for r in by_date[d]:
+            gid, pid, team, toi = r[0], r[1], r[4], r[7]
+            p_pos = pos.get(pid)
+            if p_pos is None:
+                continue
+            side = facs[gid][0] if matchup[gid][0] == team else facs[gid][1]
+            if p_pos == "G":
+                pv = starts_p.get(pid, [])
+                if r[14] and r[13] is not None and len(pv) >= CAL_MIN_GAMES:
+                    lam = goalie_rate(pv, starts_c.get(pid, [])) * side["saves"]
+                    out.append(("saves", lam, r[13], len(starts_c.get(pid, [])), naive_sv))
+                continue
+            a_p = agg_p.get(pid)
+            if toi is None or r[8] is None or a_p is None or a_p[0] < CAL_MIN_GAMES or a_p[1] / a_p[0] < CAL_MIN_TOI:
+                continue
+            a_c = agg_c.get(pid, [0, 0.0] + [0.0] * len(SKATER_MODEL))
+            rates, _ = skater_projection(pm[_grp(p_pos)], a_p[0], a_p[1], a_p[2:], a_c[0], a_c[1], a_c[2:],
+                                         recent.get(pid, [])[-TOI_RECENT_GAMES:])
+            for j, stat in enumerate(SKATER_MODEL):
+                out.append((stat, rates[stat] * side[stat], r[8 + j], a_c[0], naive[_grp(p_pos)][stat]))
+        for r in by_date[d]:                                      # the day's games join the history afterwards
+            pid, toi = r[1], r[7]
+            if pos.get(pid) == "G":
+                if r[14] and r[13] is not None:
+                    starts_c.setdefault(pid, []).append(r[13])
+            elif toi is not None and r[8] is not None:
+                a = agg_c.setdefault(pid, [0, 0.0] + [0.0] * len(SKATER_MODEL))
+                a[0] += 1
+                a[1] += toi
+                for j, i in enumerate(stat_ix):
+                    a[2 + j] += r[i] or 0
+                recent.setdefault(pid, []).append(toi)
+    return out
+
+
+def calibrate(conn: sqlite3.Connection, season: int = PRIOR_SEASON, prior: int = HISTORY_SEASON, log=print) -> dict:
+    """The live projection walked forward through `season` (backtest), scored at the lines books hang against a
+    naive position-average model, plus bias, the first-ten-games slice, a reliability table and the dispersion
+    grid at the main line. No prop prices exist for past seasons, so this validates the projection, not the
+    ROI; analysis/06 E scores it against the lines nhl.db has snapshotted since opening night."""
+    bt = backtest(conn, season, prior)
+    if not bt:
+        log(f"no {prior} + {season} game logs to walk through — run --build (it stores both finished seasons)")
+        return {}
+    report = {}
+    log(f"Walk-forward: every {season} game projected from {prior} + earlier {season} games, live recipe "
+        f"(test set: ≥ {CAL_MIN_GAMES} games at ≥ {CAL_MIN_TOI:g} min the season before; goalies ≥ {CAL_MIN_GAMES} starts)")
+    for stat in list(SKATER_MODEL) + ["saves"]:
+        xs = [x for x in bt if x[0] == stat]
+        if not xs:
+            continue
+        disp = DISPERSION.get(stat)
+        rep = {"n": len(xs), "lines": {}}
+        log(f"\n{stat.upper()} — {len(xs):,} player-games · dispersion k {'∞ (Poisson)' if disp is None else f'{disp:g}'}")
+        log(f"  {'line':>6}{'log-loss':>10}{'naive':>9}{'better by':>11}{'bias':>8}{'early ll':>10}{'early bias':>12}")
+        for line in CAL_LINES[stat]:
+            ll = lln = bias = 0.0
+            e_ll = e_bias = 0.0
+            e_n = 0
+            for _, lam, y, n_cur, lam_n in xs:
+                p = p_over(lam, line, disp)[0]
+                hit = 1.0 if y > line else 0.0
+                ll += _ll(p, hit)
+                lln += _ll(p_over(lam_n, line)[0], hit)
+                bias += p - hit
+                if n_cur < CAL_EARLY:
+                    e_ll += _ll(p, hit)
+                    e_bias += p - hit
+                    e_n += 1
+            n = len(xs)
+            rep["lines"][line] = {"ll": ll / n, "ll_naive": lln / n, "bias": bias / n,
+                                  "ll_early": e_ll / e_n if e_n else None, "bias_early": e_bias / e_n if e_n else None}
+            log(f"  {line:>6g}{ll / n:>10.4f}{lln / n:>9.4f}{(lln - ll) / n:>+11.4f}{bias / n:>+8.3f}"
+                + (f"{e_ll / e_n:>10.4f}{e_bias / e_n:>+12.3f}" if e_n else ""))
+        main = CAL_MAIN[stat]
+        bins: dict[int, list] = {}
+        for _, lam, y, _, _ in xs:
+            p = p_over(lam, main, disp)[0]
+            acc = bins.setdefault(min(9, int(p * 10)), [0, 0.0, 0.0])
+            acc[0] += 1
+            acc[1] += p
+            acc[2] += 1.0 if y > main else 0.0
+        grid = {k: sum(_ll(p_over(lam, main, k)[0], 1.0 if y > main else 0.0) for _, lam, y, _, _ in xs) / len(xs)
+                for k in DISPERSION_GRID}
         best = min(grid, key=lambda k: (grid[k], k is not None))
-        report[stat] = {"n": n, "line": line, "logloss_model": ll_m / n, "logloss_naive": ll_n / n, "bins": bins,
-                        "dispersion": grid, "best_dispersion": best}
-        log(f"\n{stat.upper()} over {line:g} — {n:,} player-games ({season}), walk-forward, no prior season")
-        log(f"  log-loss: model {ll_m / n:.4f} · naive league-average {ll_n / n:.4f} → "
-            f"{'model better' if ll_m < ll_n else 'NAIVE better'} by {abs(ll_m - ll_n) / n:.4f}")
-        log(f"  dispersion k (gamma-Poisson shape; inf = Poisson; live uses {'inf' if disp is None else f'{disp:g}'}): "
-            + " · ".join(f"{'inf' if k is None else f'{k:g}'} {v:.4f}" for k, v in grid.items())
-            + f" → best {'inf' if best is None else f'{best:g}'}")
-        log(f"  {'P(over) bin':<12}{'n':>7}{'pred':>8}{'obs':>8}{'Δpp':>7}")
-        for b in sorted(bins):
-            c, sp, sy = bins[b]
-            log(f"  {b / 10:.1f}-{(b + 1) / 10:.1f}     {c:>7}{100 * sp / c:>7.1f}%{100 * sy / c:>7.1f}%{100 * (sy - sp) / c:>+6.1f}")
+        rep.update(bins=bins, dispersion=grid, best_dispersion=best)
+        log(f"  over {main:g}, by predicted P(over):  " + " · ".join(
+            f"{b / 10:.1f}–{(b + 1) / 10:.1f}: {100 * sp / c:.0f}% vs {100 * sy / c:.0f}% (n {c})"
+            for b, (c, sp, sy) in sorted(bins.items()) if c >= 50))
+        log(f"  dispersion k at {main:g}: " + " · ".join(f"{'∞' if k is None else f'{k:g}'} {v:.4f}" for k, v in grid.items())
+            + f" → best {'∞' if best is None else f'{best:g}'}")
+        report[stat] = rep
     return report
 
 
@@ -1007,10 +1253,12 @@ def render_top(props: list[Prop], bankroll: float, n: int = 15) -> str:
 
 def _lock_row(s: Signal) -> tuple[str, str]:
     p = s.prop
-    fair = devig2(p.over, p.under)[0 if s.side == "over" else 1]
+    pr = side_probs(s)
+    ev = pr["blend"] * ce.american_to_decimal(s.price) - 1.0
     tag = "agree" if s.kind == "agree" else s.label
     return (f"{s.what} {ce.fmt_ml(s.price)} @{p.book}",
-            f"proj {p.mean:.2f} → model {100 * s.truth_p:.0f}% vs fair {100 * fair:.0f}% (+{s.edge:.0f}%, {tag})")
+            f"proj {p.mean:.2f} → model {100 * pr['model']:.0f}% · fair {100 * pr['market']:.0f}% · "
+            f"blend {100 * pr['blend']:.0f}% (EV {100 * ev:+.1f}% at the blend, {tag})")
 
 
 def render_lock(props: list[Prop]) -> str:
@@ -1021,12 +1269,19 @@ def render_lock(props: list[Prop]) -> str:
     for tag, s in ([("LOCK", lock)] if lock else []) + [(f"good {i}", s) for i, s in enumerate(good, 1)]:
         play, why = _lock_row(s)
         out.append(f"{tag:<7}{s.prop.game.kick_local.strftime('%I:%M%p').lower():<9}{s.prop.game.short:<12}{play:<48} {why}")
-    return "\n".join(out + [""] + sim_lines(([lock] if lock else []) + good))
+    return "\n".join(out + ([lock_odds_line(lock)] if lock else []) + [""] + sim_lines(([lock] if lock else []) + good))
+
+
+def lock_odds_line(lock: Signal) -> str:
+    """What a lock at this chance does over a week: the blend says how often it misses, not whether it will."""
+    p = side_probs(lock)["blend"]
+    return (f"At the blend's {100 * p:.0f}%, a lock like this misses about {round(10 * (1 - p))} nights in 10; "
+            f"the chance of at least one miss in a five-night week is {100 * (1 - p ** 5):.0f}%.")
 
 
 def sim_lines(card: list[Signal], md: bool = False) -> list[str]:
-    """The card simulation twice: if the model is right, and if the market is right."""
-    sims = [x for x in (simulate_card(card, "model"), simulate_card(card, "market")) if x]
+    """The card simulation three times: if the model is right, the blend, and the market."""
+    sims = [x for x in (simulate_card(card, src) for src in ("model", "blend", "market")) if x]
     if not sims:
         return []
     n = sims[0]["tickets"]
@@ -1067,15 +1322,22 @@ def write_report(games: list[GameCtx], props: list[Prop], bankroll: float, date:
     L = [f"# NHL Prop Report — {date.strftime('%A, %B %d, %Y')}", "",
          f"**Generated:** {now.strftime('%Y-%m-%d %I:%M %p %Z')}  ", f"**{ce.stakes_banner()}**  ",
          f"**Slate:** {len(games)} games · {len(props)} prop lines matched to rostered players ({source})  ",
-         f"**Model:** per-game rates from nhl.db game logs (shrink {SHRINK_GAMES:g} games to {PRIOR_SEASON}, "
-         f"recent-{RECENT_GAMES} weight {RECENT_WEIGHT:.2f}) × opponent pace/allowance (clamped "
-         f"{OPP_FACTOR_CAP[0]:.2f}–{OPP_FACTOR_CAP[1]:.2f}) → Poisson P(over) (saves: gamma-Poisson k={DISPERSION['saves']:g}, the rate itself uncertain). Tiers +{EDGE_PCT:g}% / +{EDGE_STRONG_PCT:g}%, "
-         f"≥ +{EDGE_OVERREACH_PCT:g}% demoted (⚠overreach). All priors until analysis/06 runs.",
+         f"**Model (skaters, since 2026-09-30):** per-minute rate × projected minutes. The rate is this season's "
+         f"stat per minute blended with last season's (weight a1) and regressed toward the position mean (K ghost "
+         f"minutes: shots {SKATER_MODEL['shots'][1]:g}, points {SKATER_MODEL['points'][1]:g}, goals "
+         f"{SKATER_MODEL['goals'][1]:g}); minutes lean {TOI_RECENT_W:.0%} on the last {TOI_RECENT_GAMES} games. "
+         f"× opponent allowance^β × home/away split → Poisson P(over) (shots: gamma-Poisson k={DISPERSION['shots']:g}; "
+         f"goalie saves: old per-start recipe, k={DISPERSION['saves']:g}). Fit on 2024-25, tested on every 2025-26 "
+         f"skater-game: better log-loss than the old recipe at every line of every stat. Tiers +{EDGE_PCT:g}% / "
+         f"+{EDGE_STRONG_PCT:g}%, ≥ +{EDGE_OVERREACH_PCT:g}% demoted (⚠overreach).",
          "", "## The lock, and five good ones", "",
          f"**The lock** is the top of the agreement board: the prop side the projection and the de-vigged "
          f"line both favour, priced {AGREE_MIN_PRICE}..{AGREE_MAX_PRICE}, model above fair by no more than "
-         f"+{AGREE_MAX_GAP_PCT:g}%, ranked by chance to cash. **Good** is the rest of that board, then the "
-         "ranked value props (§1), one per player. Paper only; the agreement board has no track record yet.", "",
+         f"+{AGREE_MAX_GAP_PCT:g}%, ranked by the **blend** ({BLEND_MODEL_W:.0%} model, {1 - BLEND_MODEL_W:.0%} "
+         "de-vigged line, in logit space: the market has been sharper everywhere so far). **Good** is the rest "
+         "of that board, then the ranked value props (§1), one per player. EV is at the blend; at "
+         "−220..−250 the juice usually outweighs what the model adds, so these are the likeliest winners, "
+         "not value bets. Paper only.", "",
          "| | Puck (CT) | Game | Play | Why |", "|---|---|---|---|---|"]
     lock, good = lock_and_good(props)
     for tag, s in ([("**LOCK**", lock)] if lock else []) + [(f"good {i}", s) for i, s in enumerate(good, 1)]:
@@ -1084,14 +1346,16 @@ def write_report(games: list[GameCtx], props: list[Prop], bankroll: float, date:
                  f"{'**' + play + '**' if s is lock else play} | {why} |")
     if not lock and not good:
         L.append("| — | — | — | nothing clears either board today | |")
+    if lock:
+        L += ["", lock_odds_line(lock)]
     card = ([lock] if lock else []) + good
     if card:
         L += ["", f"### Simulated {SIM_N:,} nights of that card", "",
               "Each ticket keeps its own chance to cash; the simulation adds how they move together "
               f"(teammates share a game-level factor, latent ρ {TEAM_RHO['points']:g} points / "
-              f"{TEAM_RHO['assists']:g} assists, measured on 2025-26 logs; opponents independent). Run twice: "
-              "once trusting the model's probabilities, once trusting the de-vigged market. Flat $1 a ticket; "
-              "the parlay column is all legs in one ticket at the product of the prices.", ""]
+              f"{TEAM_RHO['assists']:g} assists, measured on 2025-26 logs; opponents independent). Run three "
+              f"times: trusting the model, the blend ({BLEND_MODEL_W:.0%} model), and the de-vigged market. Flat $1 "
+              "a ticket; the parlay column is all legs in one ticket at the product of the prices.", ""]
         L += sim_lines(card, md=True)
     L += ["", "## 1. Ranked props", "",
          "| # | Tag | Game | Play | Price | Book | Proj | Model vs fair | $Bet (paper) | Flags |", "|---|---|---|---|---|---|---|---|---|---|"]
@@ -1105,8 +1369,9 @@ def write_report(games: list[GameCtx], props: list[Prop], bankroll: float, date:
         L.append("| — | — | — | no flagged props | | | | | | |")
     L += ["", "## 2. Projections (first 40 by game)", "", "```", render_projections(props), "```", "",
           "## 3. NHL paper ledger to date", "", "```", paper_summary, "```", "",
-          "> Paper only. No NHL analysis run exists; the projection was walk-forward calibrated on last season "
-          "(`--calibrate`) but no historical prop prices exist to backtest ROI. The ledger above is the first evidence."]
+          "> Paper only. The projection is tested walk-forward (fit on 2024-25, scored on every 2025-26 game: "
+          "`--calibrate`, `analysis/06`), but no historical prop prices exist, so ROI against posted lines is "
+          "untested until the ledger fills. The ledger above is that evidence."]
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(L) + "\n")
     return path
@@ -1172,9 +1437,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         sc = {}
     for g in games:
         g.home_factor, g.away_factor = opponent_factors(sp, sc, g.home, g.away)
+    pm = position_means(conn)
     for g in games:
         for pl in players.get(g.home, []) + players.get(g.away, []):
-            pl.rates, pl.games = player_rates(conn, pl.id, date, pl.position)
+            pl.rates, pl.games = player_rates(conn, pl.id, date, pl.position, pm)
 
     rows, source = [], "no lines"
     if a.lines_file:
