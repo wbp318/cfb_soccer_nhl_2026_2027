@@ -457,3 +457,19 @@ Five legs together at the blend: **43% to cash**, parlay pays about **+82** (dec
 | DAL @ NSH 7:00 PM | **Esa Lindell under 1.5 SOG** | -160 @draftkings | 0.98 | 74% · 58% · 62.1% (EV +0.9% at the blend) |
 
 Highest blend among sides priced −160..+120. Gap is +29%, just under the +30% overreach line, so lean on the 62% blend, not the model's 74%. Ledger context: strength-2 SOG unders are the one bucket in the black (+7.0% on 43, not significant). Runner-up with a smaller gap: Auston Matthews under 0.5 A −160 (blend 59.6%).
+
+## Update: BetRivers, legs priced −200s
+
+The parlay legs above (−600..−1400) aren't posted at BetRivers. The Odds API carries only one BetRivers NHL prop market (2+ goals, over side only, checked at 2026-10-03 ~3 PM CT), so the BetRivers prices can't be scored. Below are the likeliest sides priced −200..−299 at DraftKings/FanDuel, one per game. These are standard lines (under 0.5 assists/points), so BetRivers should hang the same number; check the price there. Same blend, same filters as above.
+
+| Game (CT) | Pick | DK/FD price | Proj | Model · Fair · Blend |
+|---|---|---|---|---|
+| WSH @ TBL 6:00 PM | Ryan McDonagh under 0.5 A | -285 @draftkings | 0.25 | 78% · 70% · 71.8% |
+| CHI @ BUF 6:00 PM | Artyom Levshunov under 0.5 A | -295 @draftkings | 0.29 | 75% · 70% · 71.5% |
+| BOS @ MIN 7:00 PM | Casey Mittelstadt under 0.5 A | -295 @draftkings | 0.29 | 75% · 70% · 71.3% |
+| SEA @ EDM 6:00 PM | Connor Murphy under 0.5 PTS | -285 @draftkings | 0.27 | 77% · 69% · 71.2% |
+| NJD @ NYI 6:30 PM | Brayden Schenn under 0.5 A | -265 @draftkings | 0.26 | 77% · 68% · 70.5% |
+
+Bench (other games, same tier): Tyler Seguin u0.5 A (DAL @ NSH) 70.7%, Rasmus Ristolainen u0.5 PTS (CAR @ PHI) 70.6%, Alex Laferriere u0.5 A (LAK @ SJS) 70.6%, Morgan Rielly u0.5 A (OTT @ TOR) 70.5%, Nick Suzuki u0.5 G (MTL @ PIT) 70.4%.
+
+Five of these together at the blend: **18% to cash**, about **+680** at the DK prices. Each leg alone misses about 3 times in 10.
