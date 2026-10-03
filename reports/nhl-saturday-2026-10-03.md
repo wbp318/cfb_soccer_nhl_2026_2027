@@ -472,4 +472,4 @@ The parlay legs above (−600..−1400) aren't posted at BetRivers. The Odds API
 
 Bench (other games, same tier): Tyler Seguin u0.5 A (DAL @ NSH) 70.7%, Rasmus Ristolainen u0.5 PTS (CAR @ PHI) 70.6%, Alex Laferriere u0.5 A (LAK @ SJS) 70.6%, Morgan Rielly u0.5 A (OTT @ TOR) 70.5%, Nick Suzuki u0.5 G (MTL @ PIT) 70.4%.
 
-Five of these together at the blend: **18% to cash**, about **+680** at the DK prices. Each leg alone misses about 3 times in 10.
+Five of these together at the blend: **18% to cash**, about **+350** at the DK prices. Each leg alone misses about 3 times in 10.
