@@ -5,6 +5,20 @@
 **Slate:** 5 games · 490 prop lines matched to rostered players (The Odds API)  
 **Model (skaters, since 2026-09-30):** per-minute rate × projected minutes. The rate is this season's stat per minute blended with last season's (weight a1) and regressed toward the position mean (K ghost minutes: shots 86, points 234, goals 694); minutes lean 56% on the last 5 games. × opponent allowance^β × home/away split → Poisson P(over) (shots: gamma-Poisson k=17.5; goalie saves: old per-start recipe, k=20). Fit on 2024-25, tested on every 2025-26 skater-game: better log-loss than the old recipe at every line of every stat. Tiers +8% / +15%, ≥ +30% demoted (⚠overreach).
 
+## BetRivers card (bet from this, not the table below)
+
+BetRivers takes overs on everything, unders on assists only, and goals only as "to score". Full reasoning in "Tonight's ask" and the filtered list in "BetRivers board" at the bottom. Prices are DK/FD/BetMGM; check the BetRivers number. Paper only.
+
+| | Game (CT) | Pick | Price | Blend |
+|---|---|---|---|---|
+| **Lock** | CGY @ SEA 7:00 PM | Jared McCann under 0.5 A | -175 | 60.8% |
+| **Goalie** (lean) | CGY @ SEA 7:00 PM | Joey Daccord over 23.5 saves | -105 | 49.9% |
+| Parlay 1 | CGY @ SEA 7:00 PM | Zayne Parekh under 0.5 A | -295 | 72.9% |
+| Parlay 2 | UTA @ NYR 5:00 PM | Oliver Bjorkstrand under 0.5 A | -300 | 71.7% |
+| Parlay 3 | FLA @ ANA 7:00 PM | Alex Killorn under 0.5 A | -285 | 71.0% |
+
+Parlay: 37% to cash at the blend, about +141.
+
 ## The lock, and five good ones
 
 **The lock** is the top of the agreement board: the prop side the projection and the de-vigged line both favour, priced -250..-110, model above fair by no more than +20%, ranked by the **blend** (25% model, 75% de-vigged line, in logit space: the market has been sharper everywhere so far). **Good** is the rest of that board, then the ranked value props (§1), one per player. EV is at the blend; at −220..−250 the juice usually outweighs what the model adds, so these are the likeliest winners, not value bets. Paper only.
@@ -12,11 +26,11 @@
 | | Puck (CT) | Game | Play | Why |
 |---|---|---|---|---|
 | **LOCK** | 7:00 PM | CGY @ SEA | **Matt Coronato under 0.5 A -245 @draftkings** | proj 0.29 → model 75% · fair 67% · blend 69% (EV -3.3% at the blend, agree) |
-| good 1 | 8:00 PM | VGK @ VAN | Mitch Marner under 0.5 G -240 @fanduel | proj 0.33 → model 72% · fair 66% · blend 68% (EV -4.3% at the blend, agree) |
-| good 2 | 8:00 PM | VGK @ VAN | Zeev Buium under 0.5 PTS -250 @betmgm | proj 0.36 → model 70% · fair 67% · blend 68% (EV -5.5% at the blend, agree) |
-| good 3 | 5:00 PM | UTA @ NYR | Pavel Dorofeyev under 0.5 G -240 @fanduel | proj 0.33 → model 72% · fair 66% · blend 67% (EV -4.4% at the blend, agree) |
-| good 4 | 7:00 PM | FLA @ ANA | Leo Carlsson under 0.5 G -250 @fanduel | proj 0.37 → model 69% · fair 67% · blend 67% (EV -5.9% at the blend, agree) |
-| good 5 | 7:00 PM | FLA @ ANA | Lars Eller under 0.5 PTS -235 @draftkings | proj 0.33 → model 72% · fair 65% · blend 67% (EV -4.4% at the blend, agree) |
+| good 1 | 8:00 PM | VGK @ VAN | Mitch Marner under 0.5 G -240 @fanduel *(not at BetRivers)* | proj 0.33 → model 72% · fair 66% · blend 68% (EV -4.3% at the blend, agree) |
+| good 2 | 8:00 PM | VGK @ VAN | Zeev Buium under 0.5 PTS -250 @betmgm *(not at BetRivers)* | proj 0.36 → model 70% · fair 67% · blend 68% (EV -5.5% at the blend, agree) |
+| good 3 | 5:00 PM | UTA @ NYR | Pavel Dorofeyev under 0.5 G -240 @fanduel *(not at BetRivers)* | proj 0.33 → model 72% · fair 66% · blend 67% (EV -4.4% at the blend, agree) |
+| good 4 | 7:00 PM | FLA @ ANA | Leo Carlsson under 0.5 G -250 @fanduel *(not at BetRivers)* | proj 0.37 → model 69% · fair 67% · blend 67% (EV -5.9% at the blend, agree) |
+| good 5 | 7:00 PM | FLA @ ANA | Lars Eller under 0.5 PTS -235 @draftkings *(not at BetRivers)* | proj 0.33 → model 72% · fair 65% · blend 67% (EV -4.4% at the blend, agree) |
 
 At the blend's 69%, a lock like this misses about 3 nights in 10; the chance of at least one miss in a five-night week is 85%.
 
