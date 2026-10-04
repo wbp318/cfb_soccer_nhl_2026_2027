@@ -275,7 +275,7 @@ player_total_saves        under    1   18  10   8   0    54.00    -4.25   -7.9%
 
 ## Tonight's ask: one lock at a decent line, a goalie prop, three parlay legs (BetRivers)
 
-Four games tonight. BetRivers only offers the **over** on shots on goal, so SOG unders are excluded. Ranked by the blend (25% model, 75% de-vigged line), every side where both model and market say > 50%, model-vs-market gap ≤ +30%. Prices are DK/FD/BetMGM (The Odds API carries almost no BetRivers NHL props); check the number at BetRivers. Paper only.
+Four games tonight. BetRivers allows **overs on everything but unders on assists only** (no SOG, points, goals or saves unders), so every other under is excluded here. Ranked by the blend (25% model, 75% de-vigged line), sides where both model and market say > 50%, model-vs-market gap ≤ +30%. Prices are DK/FD/BetMGM (The Odds API carries almost no BetRivers NHL props); check the number at BetRivers. Paper only.
 
 **One lock at a decent line**
 
@@ -283,73 +283,49 @@ Four games tonight. BetRivers only offers the **over** on shots on goal, so SOG 
 |---|---|---|---|---|
 | CGY @ SEA 7:00 PM | **Jared McCann under 0.5 A** | -175 @draftkings | 0.43 | 65% · 59% · 60.8% (EV -4.5% at the blend) |
 
-Top blend among sides priced −175..+120 once SOG unders are out. Small gap (+9%), so model and market tell the same story. Nothing in that window is +EV at the blend tonight. If you want a shots prop instead: Vince Dunn over 1.5 SOG −190 (CGY @ SEA, proj 2.27, blend 62.3%, EV −5.0%), the best-priced SOG over on the board.
+Top blend among sides priced −175..+120 under the BetRivers rules. Small gap (+9%), so model and market tell the same story. Nothing in that window is +EV at the blend tonight. If you want a shots over instead: Jordan Eberle over 1.5 SOG −174 @fanduel (CGY @ SEA, proj 2.20, blend 60.4%, EV −4.9%).
 
-**Goalie prop**
+**Goalie prop (overs only)**
 
 | Game (CT) | Pick | Price | Proj | Model · Fair · Blend |
 |---|---|---|---|---|
-| CGY @ SEA 7:00 PM | **Dustin Wolf under 24.5 saves** | -132 @fanduel | 23.0 | 61% · 53% · 55.3% (EV -2.9% at the blend) |
+| CGY @ SEA 7:00 PM | **Joey Daccord over 23.5 saves** | -105 @draftkings | 25.1 | 56% · 48% · 49.9% (EV -2.6% at the blend) |
 
-Highest blend among the saves lines. Best EV: Igor Shesterkin under 27.5 saves −120 @draftkings (UTA @ NYR, proj 25.3, blend 54.0%, EV −1.0%), but the gap is +27%, near the overreach line, so it rests more on the model. Karel Vejmelka under 23.5 (proj 20.4, model 71% vs fair 51%) is past +30% and demoted. Saves are capped at strength 1 (`SAVES_MAX_STRENGTH`) and the saves ledger is tiny (25 settled). Wolf's line is 23.5 at DraftKings; take 24.5 only if BetRivers hangs it.
+Best EV of any saves over and the only one the model likes: it projects 25.1 saves against a 23.5 line. It's a coin flip at the blend, not a lock. Highest blend is Lukas Dostal over 23.5 −130 (FLA @ ANA, 52.1%), but at −130 that's EV −7.8%. Every other saves over has the model below the market. Saves are capped at strength 1 (`SAVES_MAX_STRENGTH`) and the saves ledger is tiny (25 settled).
 
-**Three parlay legs (−300..−200, one per game)**
+**Three parlay legs (−300..−200, one per game, all assist unders)**
 
 | Game (CT) | Pick | Price | Proj | Model · Fair · Blend |
 |---|---|---|---|---|
 | CGY @ SEA 7:00 PM | Zayne Parekh under 0.5 A | -295 @betmgm | 0.19 | 82% · 69% · 72.9% |
 | UTA @ NYR 5:00 PM | Oliver Bjorkstrand under 0.5 A | -300 @betmgm | 0.24 | 78% · 69% · 71.7% |
-| VGK @ VAN 8:00 PM | Brayden McNabb under 0.5 PTS | -295 @draftkings | 0.29 | 75% · 70% · 71.4% |
+| FLA @ ANA 7:00 PM | Alex Killorn under 0.5 A | -285 @betmgm | 0.25 | 78% · 69% · 71.0% |
 
-Three legs together at the blend: **37% to cash**, parlay pays about **+139** (decimal 2.39), EV about −11% at the blend. Each leg alone misses roughly 3 times in 10. Fourth game's best in this tier for a 4th leg: Alex Killorn under 0.5 A −285 @betmgm (FLA @ ANA, blend 71.0%).
+Three legs together at the blend: **37% to cash**, parlay pays about **+141** (decimal 2.41), EV about −11% at the blend. Each leg alone misses roughly 3 times in 10. 4th leg from the last game: Brock Boeser under 0.5 A −290 @draftkings (VGK @ VAN, blend 69.9%).
 
-The full board is §1 above; §1 still lists SOG unders for the paper ledger.
+The full board is §1 above (it keeps every side for the paper ledger); the BetRivers board below is the one to bet from.
 
-## BetRivers board: §1 without SOG unders
+## BetRivers board: §1 with only overs and assist unders
 
-BetRivers only takes the over on shots, so this is §1 with the 58 SOG unders removed: 107 plays, same order and numbers (# is the §1 rank). Goalie saves are in. Paper only.
+BetRivers allows the under on assists only, so this is §1 with the 106 SOG, points, goals and saves unders removed: 59 plays, same order and numbers (# is the §1 rank). Paper only.
 
 | # | Tag | Game | Play | Price | Book | Proj | Model vs fair | $Bet (paper) | Flags |
 |---|---|---|---|---|---|---|---|---|---|
-| 2 | **STRONG PROP** | CGY @ SEA | Zayne Parekh under 0.5 PTS | -180 | draftkings | 0.27 | 76% vs 60% (+28%) | $5 | — |
 | 3 | **STRONG PROP** | VGK @ VAN | Shea Theodore under 0.5 A | -115 | betmgm | 0.45 | 64% vs 50% (+28%) | $5 | — |
-| 4 | **STRONG PROP** | UTA @ NYR | J.T. Miller under 0.5 PTS | +115 | betmgm | 0.59 | 55% vs 43% (+27%) | $4 | — |
-| 9 | **STRONG PROP** | CGY @ SEA | Zayne Parekh under 0.5 PTS | -185 | betmgm | 0.27 | 76% vs 60% (+26%) | $5 | — |
 | 12 | **STRONG PROP** | CGY @ SEA | Kaapo Kakko over 0.5 PTS | +140 | betmgm | 0.67 | 49% vs 39% (+25%) | $3 | — |
-| 14 | **STRONG PROP** | VGK @ VAN | Shea Theodore under 0.5 PTS | +115 | betmgm | 0.62 | 54% vs 43% (+24%) | $3 | — |
-| 15 | **STRONG PROP** | CGY @ SEA | Morgan Frost under 0.5 PTS | -120 | betmgm | 0.46 | 63% vs 51% (+24%) | $5 | — |
 | 17 | **STRONG PROP** | UTA @ NYR | J.T. Miller under 0.5 A | -150 | betmgm | 0.38 | 68% vs 56% (+22%) | $5 | — |
 | 19 | **STRONG PROP** | UTA @ NYR | Adam Fox under 0.5 A | +100 | draftkings | 0.57 | 57% vs 47% (+22%) | $3 | — |
 | 20 | **STRONG PROP** | CGY @ SEA | Morgan Frost under 0.5 A | -225 | betmgm | 0.24 | 79% vs 65% (+22%) | $5 | — |
-| 21 | **STRONG PROP** | CGY @ SEA | Matvei Gridin under 0.5 PTS | -125 | betmgm | 0.47 | 63% vs 52% (+21%) | $4 | — |
-| 22 | **STRONG PROP** | UTA @ NYR | Adam Fox under 0.5 PTS | +130 | draftkings | 0.72 | 49% vs 40% (+21%) | $2 | — |
-| 24 | **STRONG PROP** | CGY @ SEA | Matt Coronato under 0.5 PTS | -120 | draftkings | 0.50 | 60% vs 50% (+20%) | $3 | — |
 | 25 | **STRONG PROP** | UTA @ NYR | Mika Zibanejad under 0.5 A | -135 | betmgm | 0.45 | 64% vs 53% (+19%) | $4 | — |
 | 29 | **STRONG PROP** | UTA @ NYR | Adam Fox under 0.5 A | -105 | betmgm | 0.57 | 57% vs 48% (+18%) | $3 | — |
-| 31 | **STRONG PROP** | CGY @ SEA | Morgan Frost under 0.5 PTS | -135 | draftkings | 0.46 | 63% vs 53% (+18%) | $3 | — |
 | 32 | **STRONG PROP** | VGK @ VAN | Filip Hronek over 0.5 A | +175 | draftkings | 0.51 | 40% vs 34% (+18%) | $2 | — |
-| 34 | **STRONG PROP** | UTA @ NYR | J.T. Miller under 0.5 PTS | +100 | draftkings | 0.59 | 55% vs 47% (+18%) | $3 | — |
-| 35 | **STRONG PROP** | FLA @ ANA | Brady Tkachuk under 0.5 G | -190 | fanduel | 0.33 | 72% vs 61% (+18%) | $5 | — |
 | 40 | **STRONG PROP** | FLA @ ANA | Eetu Luostarinen over 0.5 PTS | +180 | draftkings | 0.50 | 39% vs 33% (+17%) | $1 | — |
-| 42 | **STRONG PROP** | VGK @ VAN | Shea Theodore under 0.5 PTS | +100 | draftkings | 0.62 | 54% vs 46% (+17%) | $2 | — |
 | 45 | **STRONG PROP** | CGY @ SEA | Kaapo Kakko over 0.5 A | +220 | betmgm | 0.41 | 34% vs 29% (+17%) | $1 | — |
 | 48 | **STRONG PROP** | CGY @ SEA | Matvei Gridin under 0.5 A | -220 | betmgm | 0.30 | 74% vs 64% (+16%) | $4 | — |
-| 51 | **STRONG PROP** | UTA @ NYR | Alexis Lafrenière under 0.5 PTS | +100 | betmgm | 0.62 | 54% vs 47% (+15%) | $2 | — |
 | 52 | **STRONG PROP** | FLA @ ANA | Seth Jones over 1.5 SOG | +100 | draftkings | 1.84 | 54% vs 47% (+15%) | $2 | — |
-| 54 | **prop value** | UTA @ NYR | Igor Shesterkin under 27.5 SV | -114 | fanduel | 25.31 | 64% vs 50% (+28%) | $5 | ⚠saves-model |
-| 55 | **prop value** | UTA @ NYR | Igor Shesterkin under 27.5 SV | -120 | draftkings | 25.31 | 64% vs 50% (+27%) | $5 | ⚠saves-model |
-| 56 | **prop value** | VGK @ VAN | Adin Hill under 18.5 SV | -105 | draftkings | 17.45 | 60% vs 48% (+27%) | $5 | ⚠saves-model |
-| 57 | **prop value** | VGK @ VAN | Kevin Lankinen under 27.5 SV | -115 | draftkings | 26.21 | 60% vs 50% (+19%) | $3 | ⚠saves-model |
-| 58 | **prop value** | VGK @ VAN | Kevin Lankinen under 27.5 SV | -118 | fanduel | 26.21 | 60% vs 51% (+18%) | $3 | ⚠saves-model |
-| 59 | **prop value** | CGY @ SEA | Dustin Wolf under 23.5 SV | -105 | draftkings | 23.01 | 56% vs 48% (+18%) | $2 | ⚠saves-model |
 | 60 | **prop value** | CGY @ SEA | Joey Daccord over 23.5 SV | -105 | draftkings | 25.13 | 56% vs 48% (+16%) | $2 | ⚠saves-model |
-| 61 | **prop value** | CGY @ SEA | Dustin Wolf under 24.5 SV | -132 | fanduel | 23.01 | 61% vs 53% (+15%) | $3 | ⚠saves-model |
 | 62 | **prop value** | CGY @ SEA | Mikael Backlund over 1.5 SOG | -150 | draftkings | 2.25 | 64% vs 56% (+15%) | $3 | — |
 | 63 | **prop value** | VGK @ VAN | Tomas Hertl over 1.5 SOG | -220 | betmgm | 2.56 | 70% vs 61% (+15%) | $1 | — |
-| 64 | **prop value** | UTA @ NYR | Adam Fox under 0.5 PTS | +120 | betmgm | 0.72 | 49% vs 42% (+15%) | $1 | — |
-| 65 | **prop value** | CGY @ SEA | Ryan Strome under 0.5 PTS | -160 | betmgm | 0.42 | 66% vs 58% (+15%) | $3 | — |
-| 66 | **prop value** | UTA @ NYR | Anders Lee under 0.5 PTS | -160 | betmgm | 0.42 | 66% vs 58% (+15%) | $3 | — |
-| 67 | **prop value** | CGY @ SEA | Matvei Gridin under 0.5 PTS | -145 | draftkings | 0.47 | 63% vs 55% (+15%) | $2 | — |
 | 69 | **prop value** | VGK @ VAN | Shea Theodore under 0.5 A | -150 | draftkings | 0.45 | 64% vs 56% (+14%) | $2 | — |
 | 70 | **prop value** | VGK @ VAN | Mitch Marner under 0.5 A | +115 | betmgm | 0.70 | 50% vs 43% (+14%) | $1 | — |
 | 73 | **prop value** | FLA @ ANA | Anton Lundell over 1.5 SOG | -148 | fanduel | 2.25 | 64% vs 56% (+14%) | $3 | — |
@@ -363,27 +339,15 @@ BetRivers only takes the over on shots, so this is §1 with the 58 SOG unders re
 | 84 | **prop value** | UTA @ NYR | J.T. Miller under 0.5 A | -185 | draftkings | 0.38 | 68% vs 60% (+13%) | $2 | — |
 | 86 | **prop value** | FLA @ ANA | Anton Lundell over 1.5 SOG | -155 | draftkings | 2.25 | 64% vs 57% (+13%) | $2 | — |
 | 87 | **prop value** | VGK @ VAN | Rasmus Andersson under 0.5 A | -210 | draftkings | 0.34 | 71% vs 63% (+13%) | $3 | — |
-| 88 | **prop value** | VGK @ VAN | Mitch Marner under 1.5 PTS | -220 | betmgm | 1.05 | 72% vs 64% (+13%) | $2 | — |
-| 90 | **prop value** | FLA @ ANA | Aaron Ekblad under 0.5 PTS | -190 | betmgm | 0.37 | 69% vs 61% (+12%) | $2 | — |
 | 91 | **prop value** | UTA @ NYR | Mika Zibanejad under 0.5 A | -155 | draftkings | 0.45 | 64% vs 57% (+12%) | $2 | — |
 | 93 | **prop value** | CGY @ SEA | Matt Coronato under 0.5 A | -245 | draftkings | 0.29 | 75% vs 67% (+12%) | $3 | — |
-| 94 | **prop value** | CGY @ SEA | Joel Farabee under 0.5 PTS | -160 | draftkings | 0.45 | 64% vs 57% (+12%) | $2 | — |
 | 95 | **prop value** | FLA @ ANA | Jackson LaCombe over 1.5 SOG | -130 | fanduel | 2.06 | 60% vs 53% (+12%) | $2 | — |
 | 97 | **prop value** | CGY @ SEA | Kaapo Kakko over 0.5 PTS | +115 | draftkings | 0.67 | 49% vs 43% (+12%) | $1 | — |
-| 98 | **prop value** | UTA @ NYR | Oliver Bjorkstrand under 0.5 PTS | -185 | betmgm | 0.39 | 68% vs 60% (+12%) | $2 | — |
-| 99 | **prop value** | VGK @ VAN | Tomas Hertl under 0.5 PTS | +115 | betmgm | 0.72 | 49% vs 43% (+12%) | $1 | — |
-| 101 | **prop value** | FLA @ ANA | Jacob Markstrom under 24.5 SV | -110 | draftkings | 24.28 | 54% vs 49% (+12%) | $1 | ⚠saves-model |
-| 103 | **prop value** | UTA @ NYR | Mika Zibanejad under 0.5 PTS | +135 | draftkings | 0.82 | 44% vs 40% (+12%) | $1 | — |
 | 104 | **prop value** | FLA @ ANA | Anton Lundell over 1.5 SOG | -165 | betmgm | 2.25 | 64% vs 57% (+12%) | $1 | — |
 | 107 | **prop value** | UTA @ NYR | Nick Schmaltz under 0.5 A | -190 | betmgm | 0.39 | 68% vs 61% (+11%) | $2 | — |
 | 108 | **prop value** | CGY @ SEA | Jordan Eberle under 0.5 A | -190 | betmgm | 0.39 | 68% vs 61% (+11%) | $2 | — |
 | 109 | **prop value** | VGK @ VAN | Rasmus Andersson under 0.5 A | -220 | betmgm | 0.34 | 71% vs 64% (+11%) | $2 | — |
-| 110 | **prop value** | CGY @ SEA | Joel Farabee under 0.5 PTS | -160 | betmgm | 0.45 | 64% vs 58% (+11%) | $2 | — |
 | 112 | **prop value** | FLA @ ANA | Anton Lundell over 0.5 PTS | +100 | draftkings | 0.72 | 51% vs 46% (+11%) | $1 | — |
-| 114 | **prop value** | VGK @ VAN | Jack Eichel under 0.5 G | -210 | fanduel | 0.36 | 70% vs 63% (+11%) | $2 | — |
-| 115 | **prop value** | VGK @ VAN | Mitch Marner under 1.5 PTS | -225 | draftkings | 1.05 | 72% vs 65% (+11%) | $2 | — |
-| 116 | **prop value** | CGY @ SEA | Simon Nemec under 0.5 PTS | -210 | betmgm | 0.35 | 70% vs 63% (+11%) | $2 | — |
-| 119 | **prop value** | UTA @ NYR | Alexis Lafrenière under 0.5 PTS | -110 | draftkings | 0.62 | 54% vs 49% (+10%) | $1 | — |
 | 120 | **prop value** | CGY @ SEA | Vince Dunn under 0.5 A | -165 | betmgm | 0.44 | 64% vs 58% (+10%) | $1 | — |
 | 122 | **prop value** | VGK @ VAN | Marco Rossi over 0.5 PTS | +105 | betmgm | 0.70 | 50% vs 46% (+10%) | $1 | — |
 | 123 | **prop value** | FLA @ ANA | Mikael Granlund under 0.5 A | -185 | betmgm | 0.41 | 66% vs 60% (+10%) | $1 | — |
@@ -392,29 +356,17 @@ BetRivers only takes the over on shots, so this is §1 with the 58 SOG unders re
 | 129 | **prop value** | CGY @ SEA | Chandler Stephenson under 0.5 A | -180 | draftkings | 0.41 | 66% vs 60% (+10%) | $1 | — |
 | 130 | **prop value** | FLA @ ANA | Cutter Gauthier over 0.5 PTS | -140 | betmgm | 0.91 | 60% vs 54% (+10%) | $1 | — |
 | 131 | **prop value** | UTA @ NYR | Nick Schmaltz under 0.5 A | -200 | draftkings | 0.39 | 68% vs 62% (+10%) | $1 | — |
-| 132 | **prop value** | FLA @ ANA | Lars Eller under 0.5 PTS | -235 | draftkings | 0.33 | 72% vs 65% (+10%) | $1 | — |
-| 133 | **prop value** | FLA @ ANA | Lars Eller under 0.5 PTS | -235 | betmgm | 0.33 | 72% vs 65% (+10%) | $1 | — |
-| 135 | **prop value** | CGY @ SEA | Vince Dunn under 0.5 PTS | -115 | draftkings | 0.60 | 55% vs 50% (+9%) | $1 | — |
 | 137 | **prop value** | FLA @ ANA | Brady Tkachuk over 0.5 A | +145 | draftkings | 0.54 | 42% vs 38% (+9%) | — | — |
 | 138 | **prop value** | CGY @ SEA | Jared McCann under 0.5 A | -175 | draftkings | 0.43 | 65% vs 59% (+9%) | $1 | — |
-| 139 | **prop value** | VGK @ VAN | Mitch Marner under 0.5 G | -240 | fanduel | 0.33 | 72% vs 66% (+9%) | $1 | — |
-| 140 | **prop value** | UTA @ NYR | Anders Lee under 0.5 PTS | -185 | draftkings | 0.42 | 66% vs 60% (+9%) | $1 | — |
 | 141 | **prop value** | UTA @ NYR | Alexis Lafrenière under 0.5 A | -220 | betmgm | 0.36 | 70% vs 64% (+9%) | $1 | — |
 | 142 | **prop value** | VGK @ VAN | William Karlsson under 0.5 A | -235 | betmgm | 0.34 | 71% vs 65% (+9%) | $1 | — |
-| 144 | **prop value** | UTA @ NYR | Pavel Dorofeyev under 0.5 PTS | -105 | betmgm | 0.65 | 52% vs 48% (+9%) | $1 | — |
 | 145 | **prop value** | UTA @ NYR | Nick Schmaltz over 1.5 SOG | -235 | betmgm | 2.43 | 68% vs 62% (+9%) | — | — |
-| 146 | **prop value** | UTA @ NYR | Mika Zibanejad under 0.5 PTS | +130 | betmgm | 0.82 | 44% vs 41% (+9%) | — | — |
-| 148 | **prop value** | FLA @ ANA | Mikael Granlund under 0.5 PTS | +110 | betmgm | 0.73 | 48% vs 44% (+9%) | — | — |
 | 149 | **prop value** | UTA @ NYR | Logan Cooley under 0.5 A | -235 | betmgm | 0.34 | 71% vs 65% (+9%) | $1 | — |
 | 150 | **prop value** | VGK @ VAN | Linus Karlsson over 0.5 PTS | +145 | draftkings | 0.53 | 41% vs 38% (+9%) | — | — |
 | 151 | **prop value** | CGY @ SEA | Brandon Montour over 2.5 SOG | +100 | fanduel | 2.77 | 51% vs 47% (+9%) | $1 | — |
-| 152 | **prop value** | CGY @ SEA | Jared McCann under 0.5 PTS | +125 | betmgm | 0.79 | 45% vs 42% (+9%) | — | — |
-| 153 | **prop value** | FLA @ ANA | Alex Killorn under 0.5 PTS | -165 | betmgm | 0.46 | 63% vs 58% (+9%) | $1 | — |
 | 154 | **prop value** | CGY @ SEA | Kaapo Kakko over 0.5 A | +200 | draftkings | 0.41 | 34% vs 31% (+9%) | — | — |
-| 155 | **prop value** | UTA @ NYR | Pavel Dorofeyev under 0.5 G | -240 | fanduel | 0.33 | 72% vs 66% (+9%) | $1 | — |
 | 157 | **prop value** | FLA @ ANA | Sam Bennett over 0.5 A | +180 | betmgm | 0.45 | 36% vs 33% (+8%) | — | — |
 | 158 | **prop value** | FLA @ ANA | Sam Reinhart over 2.5 SOG | +120 | fanduel | 2.56 | 46% vs 43% (+8%) | — | — |
 | 160 | **prop value** | FLA @ ANA | Brady Tkachuk over 2.5 SOG | -170 | draftkings | 3.39 | 63% vs 59% (+8%) | — | — |
 | 161 | **prop value** | UTA @ NYR | Mikhail Sergachev under 0.5 A | -155 | betmgm | 0.49 | 61% vs 57% (+8%) | — | — |
-| 163 | **prop value** | UTA @ NYR | Clayton Keller under 0.5 PTS | +140 | draftkings | 0.87 | 42% vs 39% (+8%) | — | — |
 | 164 | **prop value** | FLA @ ANA | Anton Lundell over 0.5 A | +190 | draftkings | 0.43 | 35% vs 32% (+8%) | — | — |
