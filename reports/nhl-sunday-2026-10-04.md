@@ -7,12 +7,11 @@
 
 ## BetRivers card (bet from this, not the table below)
 
-BetRivers takes overs on everything, unders on assists only, and goals only as "to score". Full reasoning in "Tonight's ask" and the filtered list in "BetRivers board" at the bottom. Prices are DK/FD/BetMGM; check the BetRivers number. Paper only.
+BetRivers takes skater overs, unders on assists only, goals only as "to score", and no goalie props. Full reasoning in "Tonight's ask" and the filtered list in "BetRivers board" at the bottom. Prices are DK/FD/BetMGM; check the BetRivers number. Paper only.
 
 | | Game (CT) | Pick | Price | Blend |
 |---|---|---|---|---|
 | **Lock** | CGY @ SEA 7:00 PM | Jared McCann under 0.5 A | -175 | 60.8% |
-| **Goalie** (lean) | CGY @ SEA 7:00 PM | Joey Daccord over 23.5 saves | -105 | 49.9% |
 | Parlay 1 | CGY @ SEA 7:00 PM | Zayne Parekh under 0.5 A | -295 | 72.9% |
 | Parlay 2 | UTA @ NYR 5:00 PM | Oliver Bjorkstrand under 0.5 A | -300 | 71.7% |
 | Parlay 3 | FLA @ ANA 7:00 PM | Alex Killorn under 0.5 A | -285 | 71.0% |
@@ -287,9 +286,9 @@ player_total_saves        under    1   18  10   8   0    54.00    -4.25   -7.9%
 
 > Paper only. The projection is tested walk-forward (fit on 2024-25, scored on every 2025-26 game: `--calibrate`, `analysis/06`), but no historical prop prices exist, so ROI against posted lines is untested until the ledger fills. The ledger above is that evidence.
 
-## Tonight's ask: one lock at a decent line, a goalie prop, three parlay legs (BetRivers)
+## Tonight's ask: one lock at a decent line, three parlay legs (BetRivers)
 
-Four games tonight. BetRivers allows **overs on everything but unders on assists only** (no SOG, points, goals or saves unders), so every other under is excluded here. Ranked by the blend (25% model, 75% de-vigged line), sides where both model and market say > 50%, model-vs-market gap ≤ +30%. Prices are DK/FD/BetMGM (The Odds API carries almost no BetRivers NHL props); check the number at BetRivers. Paper only.
+Four games tonight. BetRivers allows **skater overs, unders on assists only, goals only as "to score", and no goalie props**, so every other under and every saves line is excluded here. Ranked by the blend (25% model, 75% de-vigged line), sides where both model and market say > 50%, model-vs-market gap ≤ +30%. Prices are DK/FD/BetMGM (The Odds API carries almost no BetRivers NHL props); check the number at BetRivers. Paper only.
 
 **One lock at a decent line**
 
@@ -298,14 +297,6 @@ Four games tonight. BetRivers allows **overs on everything but unders on assists
 | CGY @ SEA 7:00 PM | **Jared McCann under 0.5 A** | -175 @draftkings | 0.43 | 65% · 59% · 60.8% (EV -4.5% at the blend) |
 
 Top blend among sides priced −175..+120 under the BetRivers rules. Small gap (+9%), so model and market tell the same story. Nothing in that window is +EV at the blend tonight. If you want a shots over instead: Jordan Eberle over 1.5 SOG −174 @fanduel (CGY @ SEA, proj 2.20, blend 60.4%, EV −4.9%).
-
-**Goalie prop (overs only)**
-
-| Game (CT) | Pick | Price | Proj | Model · Fair · Blend |
-|---|---|---|---|---|
-| CGY @ SEA 7:00 PM | **Joey Daccord over 23.5 saves** | -105 @draftkings | 25.1 | 56% · 48% · 49.9% (EV -2.6% at the blend) |
-
-Best EV of any saves over and the only one the model likes: it projects 25.1 saves against a 23.5 line. It's a coin flip at the blend, not a lock. Highest blend is Lukas Dostal over 23.5 −130 (FLA @ ANA, 52.1%), but at −130 that's EV −7.8%. Every other saves over has the model below the market. Saves are capped at strength 1 (`SAVES_MAX_STRENGTH`) and the saves ledger is tiny (25 settled).
 
 **Three parlay legs (−300..−200, one per game, all assist unders)**
 
@@ -319,9 +310,9 @@ Three legs together at the blend: **37% to cash**, parlay pays about **+141** (d
 
 The full board is §1 above (it keeps every side for the paper ledger); the BetRivers board below is the one to bet from.
 
-## BetRivers board: §1 with only overs and assist unders
+## BetRivers board: §1 with skater overs and assist unders only
 
-BetRivers allows the under on assists only, so this is §1 with the 106 SOG, points, goals and saves unders removed: 59 plays, same order and numbers (# is the §1 rank). Paper only.
+BetRivers allows unders on assists only and has no goalie props, so this is §1 with the 107 SOG/points/goals unders and saves lines removed: 58 plays, same order and numbers (# is the §1 rank). Paper only.
 
 | # | Tag | Game | Play | Price | Book | Proj | Model vs fair | $Bet (paper) | Flags |
 |---|---|---|---|---|---|---|---|---|---|
@@ -337,7 +328,6 @@ BetRivers allows the under on assists only, so this is §1 with the 106 SOG, poi
 | 45 | **STRONG PROP** | CGY @ SEA | Kaapo Kakko over 0.5 A | +220 | betmgm | 0.41 | 34% vs 29% (+17%) | $1 | — |
 | 48 | **STRONG PROP** | CGY @ SEA | Matvei Gridin under 0.5 A | -220 | betmgm | 0.30 | 74% vs 64% (+16%) | $4 | — |
 | 52 | **STRONG PROP** | FLA @ ANA | Seth Jones over 1.5 SOG | +100 | draftkings | 1.84 | 54% vs 47% (+15%) | $2 | — |
-| 60 | **prop value** | CGY @ SEA | Joey Daccord over 23.5 SV | -105 | draftkings | 25.13 | 56% vs 48% (+16%) | $2 | ⚠saves-model |
 | 62 | **prop value** | CGY @ SEA | Mikael Backlund over 1.5 SOG | -150 | draftkings | 2.25 | 64% vs 56% (+15%) | $3 | — |
 | 63 | **prop value** | VGK @ VAN | Tomas Hertl over 1.5 SOG | -220 | betmgm | 2.56 | 70% vs 61% (+15%) | $1 | — |
 | 69 | **prop value** | VGK @ VAN | Shea Theodore under 0.5 A | -150 | draftkings | 0.45 | 64% vs 56% (+14%) | $2 | — |
