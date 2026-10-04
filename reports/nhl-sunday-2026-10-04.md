@@ -273,17 +273,25 @@ player_total_saves        under    1   18  10   8   0    54.00    -4.25   -7.9%
 
 > Paper only. The projection is tested walk-forward (fit on 2024-25, scored on every 2025-26 game: `--calibrate`, `analysis/06`), but no historical prop prices exist, so ROI against posted lines is untested until the ledger fills. The ledger above is that evidence.
 
-## Tonight's ask: one lock at a decent line + three parlay legs
+## Tonight's ask: one lock at a decent line, a goalie prop, three parlay legs (BetRivers)
 
-Four games tonight. Ranked by the blend (25% model, 75% de-vigged line), every side where both model and market say > 50%, saves excluded, model-vs-market gap ≤ +30%. Paper only.
+Four games tonight. BetRivers only offers the **over** on shots on goal, so SOG unders are excluded. Ranked by the blend (25% model, 75% de-vigged line), every side where both model and market say > 50%, model-vs-market gap ≤ +30%. Prices are DK/FD/BetMGM (The Odds API carries almost no BetRivers NHL props); check the number at BetRivers. Paper only.
 
 **One lock at a decent line**
 
 | Game (CT) | Pick | Price | Proj | Model · Fair · Blend |
 |---|---|---|---|---|
-| FLA @ ANA 7:00 PM | **Lars Eller under 1.5 SOG** | -170 @draftkings | 1.19 | 67% · 59% · 60.7% (EV -3.6% at the blend) |
+| CGY @ SEA 7:00 PM | **Jared McCann under 0.5 A** | -175 @draftkings | 0.43 | 65% · 59% · 60.8% (EV -4.5% at the blend) |
 
-Best price-to-probability among sides priced −175..+120: blend within 0.2 pp of the top (Mark Stone under 2.5 SOG −175, 60.9%) at a cheaper number, gap a modest +14%. No side in that price window is +EV at the blend tonight. Ledger context: SOG unders are the one market in the black (strength 2: +2.1% on 99; not significant). Same player as good 5 (under 0.5 PTS), so don't stack both.
+Top blend among sides priced −175..+120 once SOG unders are out. Small gap (+9%), so model and market tell the same story. Nothing in that window is +EV at the blend tonight. If you want a shots prop instead: Vince Dunn over 1.5 SOG −190 (CGY @ SEA, proj 2.27, blend 62.3%, EV −5.0%), the best-priced SOG over on the board.
+
+**Goalie prop**
+
+| Game (CT) | Pick | Price | Proj | Model · Fair · Blend |
+|---|---|---|---|---|
+| CGY @ SEA 7:00 PM | **Dustin Wolf under 24.5 saves** | -132 @fanduel | 23.0 | 61% · 53% · 55.3% (EV -2.9% at the blend) |
+
+Highest blend among the saves lines. Best EV: Igor Shesterkin under 27.5 saves −120 @draftkings (UTA @ NYR, proj 25.3, blend 54.0%, EV −1.0%), but the gap is +27%, near the overreach line, so it rests more on the model. Karel Vejmelka under 23.5 (proj 20.4, model 71% vs fair 51%) is past +30% and demoted. Saves are capped at strength 1 (`SAVES_MAX_STRENGTH`) and the saves ledger is tiny (25 settled). Wolf's line is 23.5 at DraftKings; take 24.5 only if BetRivers hangs it.
 
 **Three parlay legs (−300..−200, one per game)**
 
@@ -293,6 +301,6 @@ Best price-to-probability among sides priced −175..+120: blend within 0.2 pp o
 | UTA @ NYR 5:00 PM | Oliver Bjorkstrand under 0.5 A | -300 @betmgm | 0.24 | 78% · 69% · 71.7% |
 | VGK @ VAN 8:00 PM | Brayden McNabb under 0.5 PTS | -295 @draftkings | 0.29 | 75% · 70% · 71.4% |
 
-Three legs together at the blend: **37% to cash**, parlay pays about **+139** (decimal 2.39), EV about −11% at the blend. Each leg alone misses roughly 3 times in 10. Fourth game's best in this tier if you want a 4th leg: Alex Killorn under 0.5 A −285 @betmgm (FLA @ ANA, blend 71.0%).
+Three legs together at the blend: **37% to cash**, parlay pays about **+139** (decimal 2.39), EV about −11% at the blend. Each leg alone misses roughly 3 times in 10. Fourth game's best in this tier for a 4th leg: Alex Killorn under 0.5 A −285 @betmgm (FLA @ ANA, blend 71.0%).
 
-The full board is §1 above.
+The full board is §1 above; §1 still lists SOG unders for the paper ledger.
